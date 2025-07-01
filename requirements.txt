@@ -1,0 +1,12 @@
+streamlit
+pandas
+numpy
+ta
+ccxt
+scikit-learn
+keras
+tensorflow
+matplotlib
+plotly
+requests
+python-dotenv
