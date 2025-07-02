@@ -163,6 +163,9 @@ if should_retrain():
 else:
     model, scaler = load_model_from_drive()
 
+features = ['EMA9', 'EMA21', 'VWAP', 'RSI', 'MACD', 'MACD_Signal', 'ATR', 'ROC', 'OBV',
+            'EMA12_Cross_26', 'EMA9_Cross_21', 'Above_VWAP']
+
 # ========== UI ==========
 st.set_page_config(layout='wide')
 st.title("🤖 BTC AI Dashboard + ITB Strategy")
