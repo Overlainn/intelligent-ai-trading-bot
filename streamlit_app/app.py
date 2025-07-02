@@ -289,17 +289,15 @@ if mode == "Live":
         "Confidence": round(confidence, 4)
     })
 
-# Save last 100 signals to CSV and upload to Google Drive
-import csv
-
-signal_df = pd.DataFrame(st.session_state["signal_log"]).tail(100)
-csv_file = "signal_log.csv"
-signal_df.to_csv(csv_file, index=False)
-upload_to_drive(csv_file)
-
     # Keep only the last 100 entries
     if len(st.session_state.signal_log) > 100:
         st.session_state.signal_log = st.session_state.signal_log[-100:]
+
+    # Save last 100 signals to CSV and upload to Google Drive
+    signal_df = pd.DataFrame(st.session_state.signal_log)
+    csv_file = "signal_log.csv"
+    signal_df.to_csv(csv_file, index=False)
+    upload_to_drive(csv_file)
 
     # 📈 Chart
     fig = go.Figure()
@@ -329,7 +327,7 @@ upload_to_drive(csv_file)
 
     # 📋 Signal Log Table
     st.subheader("📊 Signal Log")
-    st.dataframe(pd.DataFrame(st.session_state.signal_log))
+    st.dataframe(signal_df)
 
     # 🔁 Force Retrain Button
     with st.container():
