@@ -20,7 +20,7 @@ drive_service = build('drive', 'v3', credentials=creds)
 MODEL_FILE = "btc_model.pkl"
 LAST_TRAIN_FILE = "last_train.txt"
 DATA_FILE = "btc_data.csv"
-FOLDER_NAME = "StreamlitAI"
+FOLDER_NAME = "StreamlitITB"
 
 # ========== Google Drive Functions ==========
 def get_folder_id():
