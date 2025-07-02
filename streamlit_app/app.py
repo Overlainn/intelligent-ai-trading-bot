@@ -255,7 +255,7 @@ def get_data():
     return df
 
 # ========== Live Mode ==========
-if mode == "Live":
+elif mode == "Live":
     df = get_data()
     df['Prediction'] = model.predict(scaler.transform(df[features]))
     probs = model.predict_proba(scaler.transform(df[features]))
@@ -283,10 +283,12 @@ if mode == "Live":
             "scores": {
                 "Short": round(last['S0'], 2),
                 "Neutral": round(last['S1'], 2),
-                "Long": round(last['S2'], 2)
+                "Long": round(last['S2'], 2),
+                "Confidence": round(confidence, 2)
             }
         })
 
+    # 📈 Chart with indicators and signal marker
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df.index, y=df['Close'], name='Price', line=dict(color='lightblue')))
     fig.add_trace(go.Scatter(x=df.index, y=df['EMA9'], name='EMA9', line=dict(color='blue')))
@@ -301,16 +303,31 @@ if mode == "Live":
             name=s['signal']
         ))
 
-    fig.update_layout(title=f"📉 BTC Live — ${last['Close']:.2f}", height=600)
+    fig.update_layout(
+        title=f"📉 BTC Live — ${last['Close']:.2f}",
+        height=600,
+        xaxis_title="Time",
+        yaxis_title="Price",
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        font=dict(color='white')
+    )
     st.plotly_chart(fig, use_container_width=True)
 
+    # 📋 Signal Log Table
     st.subheader("📊 Signal Log")
     if signals:
-        st.dataframe(pd.DataFrame(signals))
+        flat_signals = [{
+            "Time": s["timestamp"],
+            "Price": s["price"],
+            "Signal": s["signal"],
+            **s["scores"]
+        } for s in signals]
+        st.dataframe(pd.DataFrame(flat_signals))
     else:
         st.info("No confident signals generated yet.")
 
-    # ✅ Force Retrain Button Under Chart
+    # 🔁 Force Retrain Button
     with st.container():
         st.markdown("---")
         if st.button("🔁 Force Retrain", type="primary"):
