@@ -1,12 +1,24 @@
-streamlit
-pandas
-numpy
-ta
-ccxt
-scikit-learn
+# Core Libraries
+streamlit>=1.34.0
+pandas>=2.2.2
+numpy>=1.26.4
+
+# Technical Analysis
+ta>=0.10.2
+ccxt>=4.1.89
+plotly>=5.22.0
+matplotlib
+
+# Machine Learning
+scikit-learn>=1.4.1
 keras
 tensorflow
-matplotlib
-plotly
-requests
+
+# Utility
+requests>=2.31.0
 python-dotenv
+
+# Google APIs
+google-api-python-client>=2.126.0
+google-auth>=2.29.0
+google-auth-oauthlib>=1.2.0
