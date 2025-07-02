@@ -357,94 +357,109 @@ if mode == "Live":
                 model, scaler = train_model()
                 st.success("✅ Model retrained successfully.")
                 st.rerun()
+
 elif mode == "Backtest":
     df = get_data()
-    trades = []
-    in_position = None
-    entry_time = None
-    entry_price = None
-    entry_row = None
 
-    for i in range(1, len(df)):
-        row = df.iloc[i]
+    results = {"Pure": [], "ITB": []}
 
-        # Entry logic
-        if in_position is None:
-            if row['Prediction'] == 2 and row['S2'] > 0.6:
-                in_position = "LONG"
-                entry_time = row.name
-                entry_price = row['Close']
-                entry_row = row
-            elif row['Prediction'] == 0 and row['S0'] > 0.6:
-                in_position = "SHORT"
-                entry_time = row.name
-                entry_price = row['Close']
-                entry_row = row
+    for use_itb in ["Pure", "ITB"]:
+        trades = []
+        in_position = None
+        entry_time = None
+        entry_price = None
+        entry_row = None
 
-        # Exit logic: only on opposite signal
-        elif in_position == "LONG":
-            if row['Prediction'] == 0 and row['S0'] > 0.6:
-                trades.append({
-                    "Entry Time": entry_time,
-                    "Exit Time": row.name,
-                    "Direction": in_position,
-                    "Entry Price": entry_price,
-                    "Exit Price": row['Close'],
-                    "PNL (USD)": row['Close'] - entry_price,
-                    "Profit %": (row['Close'] / entry_price - 1) * 100,
-                    "S0": round(entry_row.get("S0", 0), 3),
-                    "S1": round(entry_row.get("S1", 0), 3),
-                    "S2": round(entry_row.get("S2", 0), 3),
-                    "Confidence": round(max(entry_row.get("S0", 0), entry_row.get("S2", 0)), 3),
-                    "Reason": "Opposite Signal"
-                })
-                in_position = None
+        for i in range(1, len(df)):
+            row = df.iloc[i]
 
-        elif in_position == "SHORT":
-            if row['Prediction'] == 2 and row['S2'] > 0.6:
-                trades.append({
-                    "Entry Time": entry_time,
-                    "Exit Time": row.name,
-                    "Direction": in_position,
-                    "Entry Price": entry_price,
-                    "Exit Price": row['Close'],
-                    "PNL (USD)": entry_price - row['Close'],
-                    "Profit %": (entry_price / row['Close'] - 1) * 100,
-                    "S0": round(entry_row.get("S0", 0), 3),
-                    "S1": round(entry_row.get("S1", 0), 3),
-                    "S2": round(entry_row.get("S2", 0), 3),
-                    "Confidence": round(max(entry_row.get("S0", 0), entry_row.get("S2", 0)), 3),
-                    "Reason": "Opposite Signal"
-                })
-                in_position = None
+            # Entry logic
+            if in_position is None:
+                valid_long = row['Prediction'] == 2 and row['S2'] > 0.6
+                valid_short = row['Prediction'] == 0 and row['S0'] > 0.6
+                passes_itb = row['ITB'] if use_itb == "ITB" else True
 
-    df_trades = pd.DataFrame(trades)
+                if valid_long and passes_itb:
+                    in_position = "LONG"
+                    entry_time, entry_price, entry_row = row.name, row['Close'], row
+                elif valid_short and passes_itb:
+                    in_position = "SHORT"
+                    entry_time, entry_price, entry_row = row.name, row['Close'], row
 
-    # 📈 Plotting
+            # Exit logic
+            elif in_position == "LONG":
+                if row['Prediction'] == 0 and row['S0'] > 0.6:
+                    trades.append({
+                        "Entry Time": entry_time,
+                        "Exit Time": row.name,
+                        "Direction": in_position,
+                        "Entry Price": entry_price,
+                        "Exit Price": row['Close'],
+                        "PNL (USD)": row['Close'] - entry_price,
+                        "Profit %": (row['Close'] / entry_price - 1) * 100,
+                        "ITB": use_itb,
+                        "Confidence": round(max(entry_row.get("S0", 0), entry_row.get("S2", 0)), 3)
+                    })
+                    in_position = None
+
+            elif in_position == "SHORT":
+                if row['Prediction'] == 2 and row['S2'] > 0.6:
+                    trades.append({
+                        "Entry Time": entry_time,
+                        "Exit Time": row.name,
+                        "Direction": in_position,
+                        "Entry Price": entry_price,
+                        "Exit Price": row['Close'],
+                        "PNL (USD)": entry_price - row['Close'],
+                        "Profit %": (entry_price / row['Close'] - 1) * 100,
+                        "ITB": use_itb,
+                        "Confidence": round(max(entry_row.get("S0", 0), entry_row.get("S2", 0)), 3)
+                    })
+                    in_position = None
+
+        results[use_itb] = trades
+
+    # 🔎 Convert to DataFrames
+    df_pure = pd.DataFrame(results["Pure"])
+    df_itb = pd.DataFrame(results["ITB"])
+
+    # 📊 Display Results
+    st.subheader("🧪 Backtest A: Pure Model")
+    if not df_pure.empty:
+        st.dataframe(df_pure.style.applymap(lambda v: 'color:green' if v > 0 else 'color:red', subset=["PNL (USD)", "Profit %"]))
+        st.markdown(f"**Total Trades**: {len(df_pure)} | **Avg Profit**: {df_pure['Profit %'].mean():.2f}%")
+    else:
+        st.warning("No trades in pure mode.")
+
+    st.subheader("🧪 Backtest B: Model + ITB Filter")
+    if not df_itb.empty:
+        st.dataframe(df_itb.style.applymap(lambda v: 'color:green' if v > 0 else 'color:red', subset=["PNL (USD)", "Profit %"]))
+        st.markdown(f"**Total Trades**: {len(df_itb)} | **Avg Profit**: {df_itb['Profit %'].mean():.2f}%")
+    else:
+        st.warning("No trades in ITB mode.")
+
+    # 📈 Plot Combined Trades
+    st.subheader("📈 Backtest Chart with All Trades")
+
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df.index, y=df['Close'], name='Price', line=dict(color='lightblue')))
-    for trade in trades:
-        color = 'green' if trade['Direction'] == 'LONG' else 'red'
-        fig.add_trace(go.Scatter(
-            x=[trade["Entry Time"]], y=[trade["Entry Price"]],
-            mode='markers', marker=dict(color=color, symbol='triangle-up', size=10),
-            name=f'{trade["Direction"]} Entry'
-        ))
-        fig.add_trace(go.Scatter(
-            x=[trade["Exit Time"]], y=[trade["Exit Price"]],
-            mode='markers', marker=dict(color=color, symbol='x', size=10),
-            name=f'{trade["Direction"]} Exit'
-        ))
-    fig.update_layout(height=600, title="Backtest Chart with Trades")
+
+    for trade_df, mode, symbol in [(df_pure, "Pure", 'circle'), (df_itb, "ITB", 'diamond')]:
+        color_map = {'LONG': 'green', 'SHORT': 'red'}
+        for _, trade in trade_df.iterrows():
+            color = color_map.get(trade["Direction"], 'gray')
+            fig.add_trace(go.Scatter(
+                x=[trade["Entry Time"]], y=[trade["Entry Price"]],
+                mode='markers',
+                marker=dict(color=color, symbol=symbol, size=10),
+                name=f'{mode} {trade["Direction"]} Entry'
+            ))
+            fig.add_trace(go.Scatter(
+                x=[trade["Exit Time"]], y=[trade["Exit Price"]],
+                mode='markers',
+                marker=dict(color=color, symbol='x', size=10),
+                name=f'{mode} {trade["Direction"]} Exit'
+            ))
+
+    fig.update_layout(height=600, title="Backtest Trade Entries and Exits", showlegend=True)
     st.plotly_chart(fig, use_container_width=True)
-
-    # 🧾 Log with styling
-    st.subheader("🧪 Backtest — Signal-Based Trade Log")
-
-    def pnl_color(val):
-        return f'color: {"green" if val > 0 else "red"}'
-
-    if not df_trades.empty:
-        st.dataframe(df_trades.style.applymap(pnl_color, subset=['PNL (USD)', 'Profit %']))
-    else:
-        st.warning("No trades detected during this backtest.")
