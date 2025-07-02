@@ -81,7 +81,7 @@ def load_model_from_drive():
         return pickle.load(f)
 
 # ========== Historical Data Fetching ==========
-def fetch_paginated_ohlcv(symbol='BTC/USDT', timeframe='10m', days=90):
+def fetch_paginated_ohlcv(symbol='BTC/USDT', timeframe='15m', days=90):
     exchange = ccxt.coinbase()
     since = exchange.milliseconds() - days * 24 * 60 * 60 * 1000
     all_data = []
@@ -203,7 +203,7 @@ if not os.path.exists(logfile):
 
 # ========== Data Function ==========
 def get_data():
-    df = pd.DataFrame(exchange.fetch_ohlcv('BTC/USDT', '10m', limit=5000),
+    df = pd.DataFrame(exchange.fetch_ohlcv('BTC/USDT', '15m', limit=5000),
                       columns=['Timestamp', 'Open', 'High', 'Low', 'Close', 'Volume'])
     df['Timestamp'] = pd.to_datetime(df['Timestamp'], unit='ms').dt.tz_localize('UTC').dt.tz_convert(est)
     df.set_index('Timestamp', inplace=True)
