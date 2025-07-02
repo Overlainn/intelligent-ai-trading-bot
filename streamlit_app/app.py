@@ -347,7 +347,7 @@ if mode == "Live":
 
     # 📋 Signal Log Table
     st.subheader("📊 Signal Log")
-    st.dataframe(signal_df)
+    st.dataframe(signal_df.sort_values(by="Timestamp", ascending=False))
 
     # 🔁 Force Retrain Button
     with st.container():
