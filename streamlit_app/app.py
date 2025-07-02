@@ -6,10 +6,10 @@ import ccxt, pandas as pd, ta, time, streamlit as st, plotly.graph_objs as go
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 import pytz, requests, pickle, io
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
+from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload, MediaFileUpload
 from trading_engine.strategy import should_enter_trade
 
 SCOPES = ['https://www.googleapis.com/auth/drive']
@@ -21,6 +21,7 @@ MODEL_FILE = "btc_model.pkl"
 LAST_TRAIN_FILE = "last_train.txt"
 FOLDER_NAME = "StreamlitAI"
 
+# ========== Google Drive Functions ==========
 def get_folder_id():
     query = f"name='{FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder'"
     response = drive_service.files().list(q=query, spaces='drive', fields='files(id)').execute()
@@ -30,6 +31,20 @@ def get_folder_id():
     file_metadata = {'name': FOLDER_NAME, 'mimeType': 'application/vnd.google-apps.folder'}
     folder = drive_service.files().create(body=file_metadata, fields='id').execute()
     return folder['id']
+
+def upload_to_drive_stream(file_stream, filename):
+    folder_id = get_folder_id()
+    media = MediaIoBaseUpload(file_stream, mimetype='application/octet-stream', resumable=True)
+    file_metadata = {'name': filename, 'parents': [folder_id]}
+    existing = drive_service.files().list(q=f"name='{filename}' and '{folder_id}' in parents", fields='files(id)').execute().get('files', [])
+    if existing:
+        drive_service.files().delete(fileId=existing[0]['id']).execute()
+    drive_service.files().create(body=file_metadata, media_body=media).execute()
+
+def upload_to_drive_content(filename, content):
+    with open("temp.txt", "w") as f:
+        f.write(content)
+    upload_to_drive("temp.txt")
 
 def upload_to_drive(filename):
     folder_id = get_folder_id()
@@ -57,6 +72,14 @@ def download_from_drive(filename):
         f.write(fh.getvalue())
     return True
 
+def load_model_from_drive():
+    if not download_from_drive(MODEL_FILE):
+        st.error("❌ Failed to load model from Drive. Training new one.")
+        return train_model()
+    with open(MODEL_FILE, 'rb') as f:
+        return pickle.load(f)
+
+# ========== Push Notifications ==========
 push_user_key = st.secrets["pushover"]["user"]
 push_app_token = st.secrets["pushover"]["token"]
 def send_push_notification(msg):
@@ -66,12 +89,14 @@ def send_push_notification(msg):
         "message": msg
     })
 
+# ========== Refresh Timer ==========
 if 'last_refresh' not in st.session_state:
     st.session_state.last_refresh = time.time()
 if time.time() - st.session_state.last_refresh > 60:
     st.session_state.last_refresh = time.time()
     st.rerun()
 
+# ========== Model Training ==========
 def train_model():
     exchange = ccxt.coinbase()
     df = pd.DataFrame(exchange.fetch_ohlcv('BTC/USDT', '1m', limit=1500),
@@ -111,30 +136,25 @@ def train_model():
     scaler = StandardScaler().fit(X)
     model = RandomForestClassifier(n_estimators=50).fit(scaler.transform(X), y)
 
-    with open(MODEL_FILE, 'wb') as f:
-        pickle.dump((model, scaler), f)
-    with open(LAST_TRAIN_FILE, 'w') as f:
-        f.write(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-    upload_to_drive(MODEL_FILE)
-    upload_to_drive(LAST_TRAIN_FILE)
+    model_bytes = pickle.dumps((model, scaler))
+    upload_to_drive_stream(io.BytesIO(model_bytes), MODEL_FILE)
+    upload_to_drive_content(LAST_TRAIN_FILE, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
     return model, scaler
 
-
-# ========== Load or Train ==========
-from datetime import datetime, timedelta
-
+# ========== Load or Retrain Model ==========
 RETRAIN_INTERVAL = timedelta(hours=12)
 
 def should_retrain():
-    if not os.path.exists(LAST_TRAIN_FILE):
+    if not download_from_drive(LAST_TRAIN_FILE):
         return True
-    with open(LAST_TRAIN_FILE) as f:
+    with open(LAST_TRAIN_FILE, 'r') as f:
         last_train_str = f.read().strip()
-        try:
-            last_train_time = datetime.strptime(last_train_str, "%Y-%m-%d %H:%M:%S")
-        except ValueError:
-            return True
-        return datetime.now() - last_train_time > RETRAIN_INTERVAL
+    try:
+        last_train_time = datetime.strptime(last_train_str, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return True
+    return datetime.now() - last_train_time > RETRAIN_INTERVAL
 
 force_retrain = st.sidebar.button("🔁 Force Retrain")
 
@@ -144,15 +164,7 @@ if force_retrain:
 elif should_retrain():
     model, scaler = train_model()
 else:
-    if not os.path.exists(MODEL_FILE):
-        if not (download_from_drive(MODEL_FILE) and download_from_drive(LAST_TRAIN_FILE)):
-            model, scaler = train_model()
-        else:
-            with open(MODEL_FILE, 'rb') as f:
-                model, scaler = pickle.load(f)
-    else:
-        with open(MODEL_FILE, 'rb') as f:
-            model, scaler = pickle.load(f)
+    model, scaler = load_model_from_drive()
 
 # ========== UI ==========
 st.set_page_config(layout='wide')
