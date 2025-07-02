@@ -255,7 +255,7 @@ def get_data():
     return df
 
 # ========== Live Mode ==========
-elif mode == "Live":
+if mode == "Live":
     df = get_data()
     df['Prediction'] = model.predict(scaler.transform(df[features]))
     probs = model.predict_proba(scaler.transform(df[features]))
