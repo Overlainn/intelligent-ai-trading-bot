@@ -229,51 +229,139 @@ def get_data():
 # ========== Live Mode ==========
 if mode == "Live":
     df = get_data()
-    row = df.iloc[-1]
-    price = row['Close']
-    pred = row['Prediction']
+    signals = []
+    df['Prediction'] = model.predict(scaler.transform(df[features]))
+    probs = model.predict_proba(scaler.transform(df[features]))
+    df['S0'] = probs[:, 0]
+    df['S1'] = probs[:, 1]
+    df['S2'] = probs[:, 2]
 
-    s0 = row.get('S0')
-    s2 = row.get('S2')
-    if s0 is not None and s2 is not None:
-        conf = max(s0, s2)
+    last = df.iloc[-1]
+    signal = None
+    confidence = None
+
+    if last['Prediction'] == 2 and last['S2'] > 0.6:
+        signal = 'Long'
+        confidence = last['S2']
+    elif last['Prediction'] == 0 and last['S0'] > 0.6:
+        signal = 'Short'
+        confidence = last['S0']
+
+    if signal:
+        signals.append({
+            "timestamp": last.name,
+            "price": last['Close'],
+            "signal": signal,
+            "scores": {
+                "Short": round(last['S0'], 2),
+                "Neutral": round(last['S1'], 2),
+                "Long": round(last['S2'], 2)
+            }
+        })
+
+    # Plot
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df.index, y=df['Close'], name='Price', line=dict(color='lightblue')))
+    fig.add_trace(go.Scatter(x=df.index, y=df['EMA9'], name='EMA9', line=dict(color='blue')))
+    fig.add_trace(go.Scatter(x=df.index, y=df['EMA21'], name='EMA21', line=dict(color='orange')))
+    fig.add_trace(go.Scatter(x=df.index, y=df['VWAP'], name='VWAP', line=dict(color='red')))
+
+    for s in signals:
+        fig.add_trace(go.Scatter(
+            x=[s['timestamp']], y=[s['price']],
+            mode='markers',
+            marker=dict(color='green' if s['signal'] == 'Long' else 'red', size=10),
+            name=s['signal']
+        ))
+
+    fig.update_layout(title=f"📉 BTC Live — ${last['Close']:.2f}", height=600)
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.subheader("📊 Signal Log")
+    if signals:
+        st.dataframe(pd.DataFrame(signals))
     else:
-        conf = 0
-        st.warning("⚠️ Confidence score missing — setting to 0.")
+        st.info("No confident signals generated yet.")
 
-    t = row.name.strftime("%Y-%m-%d %H:%M")
-    decision = row['ITB']
+elif mode == "Backtest":
+    df = get_data()
+    df['Prediction'] = model.predict(scaler.transform(df[features]))
+    probs = model.predict_proba(scaler.transform(df[features]))
+    df['S0'] = probs[:, 0]
+    df['S2'] = probs[:, 2]
 
-    if 'open_trade' not in st.session_state:
-        st.session_state['open_trade'] = None
+    trades = []
+    in_position = None
+    entry_time = None
+    entry_price = None
 
-    trade = st.session_state['open_trade']
+    for i in range(1, len(df)):
+        row = df.iloc[i]
+        if in_position is None:
+            if row['Prediction'] == 2 and row['S2'] > 0.6:
+                in_position = "LONG"
+                entry_time = row.name
+                entry_price = row['Close']
+            elif row['Prediction'] == 0 and row['S0'] > 0.6:
+                in_position = "SHORT"
+                entry_time = row.name
+                entry_price = row['Close']
+        elif in_position == "LONG":
+            if row['Prediction'] == 0 and row['S0'] > 0.6:
+                trades.append({
+                    "Entry Time": entry_time,
+                    "Exit Time": row.name,
+                    "Direction": in_position,
+                    "Entry Price": entry_price,
+                    "Exit Price": row['Close'],
+                    "PNL (USD)": row['Close'] - entry_price,
+                    "Profit %": (row['Close'] / entry_price - 1) * 100,
+                    "Reason": "Opposite Signal"
+                })
+                in_position = None
+        elif in_position == "SHORT":
+            if row['Prediction'] == 2 and row['S2'] > 0.6:
+                trades.append({
+                    "Entry Time": entry_time,
+                    "Exit Time": row.name,
+                    "Direction": in_position,
+                    "Entry Price": entry_price,
+                    "Exit Price": row['Close'],
+                    "PNL (USD)": entry_price - row['Close'],
+                    "Profit %": (entry_price / row['Close'] - 1) * 100,
+                    "Reason": "Opposite Signal"
+                })
+                in_position = None
 
-    if not trade and decision in ["LONG", "SHORT"]:
-        signal_code = 2 if decision == "LONG" else 0
-        st.session_state['open_trade'] = {
-            "signal": signal_code,
-            "entry_price": price,
-            "entry_time": t,
-            "entry_conf": conf
-        }
-        msg = f"BTC 📥 ENTRY — {decision} | {t} | ${price:.2f} | Conf: {conf:.2f}"
-        send_push_notification(msg)
-        pd.DataFrame([{"Timestamp": t, "Price": price, "Signal": f"ENTRY {decision}", "Scores": f"{conf:.2f}"}]).to_csv(logfile, mode='a', header=False, index=False)
+    df_trades = pd.DataFrame(trades)
 
-    elif trade:
-        reason = None
-        if pred != trade["signal"]:
-            reason = "Signal flipped"
-        elif conf < 0.6:
-            reason = "Confidence dropped"
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df.index, y=df['Close'], name='Price', line=dict(color='lightblue')))
+    for trade in trades:
+        color = 'green' if trade['Direction'] == 'LONG' else 'red'
+        fig.add_trace(go.Scatter(
+            x=[trade["Entry Time"]], y=[trade["Entry Price"]],
+            mode='markers', marker=dict(color=color, symbol='triangle-up', size=10),
+            name=f'{trade["Direction"]} Entry'
+        ))
+        fig.add_trace(go.Scatter(
+            x=[trade["Exit Time"]], y=[trade["Exit Price"]],
+            mode='markers', marker=dict(color=color, symbol='x', size=10),
+            name=f'{trade["Direction"]} Exit'
+        ))
+    fig.update_layout(height=600, title="Backtest Chart with Trades")
+    st.plotly_chart(fig, use_container_width=True)
 
-        if reason:
-            name = "LONG" if trade["signal"] == 2 else "SHORT"
-            msg = f"BTC ❌ EXIT — {name} | {t} | ${price:.2f} | Reason: {reason}"
-            send_push_notification(msg)
-            pd.DataFrame([{"Timestamp": t, "Price": price, "Signal": f"EXIT {name}", "Scores": reason}]).to_csv(logfile, mode='a', header=False, index=False)
-            st.session_state['open_trade'] = None
+    st.subheader("🧪 Backtest — Signal-Based Trade Log")
+
+    def pnl_color(val):
+        return f'color: {"green" if val > 0 else "red"}'
+
+    if not df_trades.empty:
+        st.dataframe(df_trades.style.applymap(pnl_color, subset=['PNL (USD)', 'Profit %']))
+    else:
+        st.warning("No trades detected during this backtest.")
+
 
     st.subheader(f"📊 BTC Live — ${price:.2f}")
     fig = go.Figure()
