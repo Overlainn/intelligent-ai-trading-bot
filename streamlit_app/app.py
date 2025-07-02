@@ -104,10 +104,9 @@ def load_or_fetch_data():
         if not download_from_drive(DATA_FILE):
             df = fetch_paginated_ohlcv()
             df.to_csv(DATA_FILE)
-            upload_to_drive(DATA_FILE)
+            upload_to_drive(DATA_FILE)  # ✅ Only uploaded if freshly fetched
             return df
-    df = pd.read_csv(DATA_FILE, index_col='Timestamp', parse_dates=True)
-    return df
+    return pd.read_csv(DATA_FILE, index_col='Timestamp', parse_dates=True)
 
 # ========== Push Notifications ==========
 push_user_key = st.secrets["pushover"]["user"]
@@ -129,6 +128,7 @@ if time.time() - st.session_state.last_refresh > 60:
 # ========== Model Training ==========
 def train_model():
     df = load_or_fetch_data()
+    upload_to_drive(DATA_FILE)  # ✅ Ensure dataset is always saved to Drive
 
     # Feature Engineering
     df['EMA9'] = ta.trend.ema_indicator(df['Close'], window=9)
