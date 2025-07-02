@@ -268,10 +268,11 @@ def get_data():
 
 # ========== Live Mode ==========
 if mode == "Live":
-    # Make sure signal_log session state exists
+    # ✅ Initialize signal log in session state if needed
     if "signal_log" not in st.session_state:
         st.session_state.signal_log = []
 
+    # ✅ Get data and make predictions
     df = get_data()
     df['Prediction'] = model.predict(scaler.transform(df[features]))
     probs = model.predict_proba(scaler.transform(df[features]))
@@ -290,10 +291,10 @@ if mode == "Live":
         signal = 'Short'
         confidence = last['S0']
 
-    # Append latest signal to session log
+    # ✅ Always log the latest row, whether it's a signal or not
     st.session_state.signal_log.append({
         "Timestamp": last.name,
-        "Price": last['Close'],
+        "Price": round(last['Close'], 2),
         "Signal": signal if signal else "None",
         "Short": round(last['S0'], 4),
         "Neutral": round(last['S1'], 4),
@@ -301,11 +302,10 @@ if mode == "Live":
         "Confidence": round(confidence, 4)
     })
 
-    # Keep only the last 100 entries
-    if len(st.session_state.signal_log) > 100:
-        st.session_state.signal_log = st.session_state.signal_log[-100:]
+    # ✅ Keep only last 100 entries
+    st.session_state.signal_log = st.session_state.signal_log[-100:]
 
-    # Save last 100 signals to CSV and upload to Google Drive
+    # ✅ Save to CSV and upload to Drive
     signal_df = pd.DataFrame(st.session_state.signal_log)
     csv_file = "signal_log.csv"
     signal_df.to_csv(csv_file, index=False)
@@ -349,7 +349,6 @@ if mode == "Live":
                 model, scaler = train_model()
                 st.success("✅ Model retrained successfully.")
                 st.rerun()
-
 elif mode == "Backtest":
     df = get_data()
     trades = []
