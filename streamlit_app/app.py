@@ -37,9 +37,15 @@ def upload_to_drive_stream(file_stream, filename):
     folder_id = get_folder_id()
     media = MediaIoBaseUpload(file_stream, mimetype='application/octet-stream', resumable=True)
     file_metadata = {'name': filename, 'parents': [folder_id]}
-    existing = drive_service.files().list(q=f"name='{filename}' and '{folder_id}' in parents", fields='files(id)').execute().get('files', [])
+    existing = drive_service.files().list(
+        q=f"name='{filename}' and '{folder_id}' in parents",
+        fields='files(id)'
+    ).execute().get('files', [])
     if existing:
-        drive_service.files().delete(fileId=existing[0]['id']).execute()
+        try:
+            drive_service.files().delete(fileId=existing[0]['id']).execute()
+        except Exception as e:
+            print(f"⚠️ Warning: Couldn't delete existing file '{filename}': {e}")
     drive_service.files().create(body=file_metadata, media_body=media).execute()
 
 def upload_to_drive_content(filename, content):
@@ -51,9 +57,15 @@ def upload_to_drive(filename):
     folder_id = get_folder_id()
     media = MediaFileUpload(filename, resumable=True)
     file_metadata = {'name': filename, 'parents': [folder_id]}
-    existing = drive_service.files().list(q=f"name='{filename}' and '{folder_id}' in parents", fields='files(id)').execute().get('files', [])
+    existing = drive_service.files().list(
+        q=f"name='{filename}' and '{folder_id}' in parents",
+        fields='files(id)'
+    ).execute().get('files', [])
     if existing:
-        drive_service.files().delete(fileId=existing[0]['id']).execute()
+        try:
+            drive_service.files().delete(fileId=existing[0]['id']).execute()
+        except Exception as e:
+            print(f"⚠️ Warning: Couldn't delete existing file '{filename}': {e}")
     drive_service.files().create(body=file_metadata, media_body=media).execute()
 
 def download_from_drive(filename):
