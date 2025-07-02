@@ -156,12 +156,8 @@ def should_retrain():
         return True
     return datetime.now() - last_train_time > RETRAIN_INTERVAL
 
-force_retrain = st.sidebar.button("🔁 Force Retrain")
-
-if force_retrain:
-    st.warning("⚠️ Forcing model retrain...")
-    model, scaler = train_model()
-elif should_retrain():
+# Only automatic retrain or load from drive — no sidebar button
+if should_retrain():
     model, scaler = train_model()
 else:
     model, scaler = load_model_from_drive()
