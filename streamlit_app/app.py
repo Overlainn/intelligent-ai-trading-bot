@@ -42,9 +42,9 @@ def upload_to_drive_stream(file_stream, filename):
     drive_service.files().create(body=file_metadata, media_body=media).execute()
 
 def upload_to_drive_content(filename, content):
-    with open("temp.txt", "w") as f:
+    with open("last_train.txt", "w") as f:
         f.write(content)
-    upload_to_drive("temp.txt")
+    upload_to_drive("last_train.txt")
 
 def upload_to_drive(filename):
     folder_id = get_folder_id()
