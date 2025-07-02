@@ -270,7 +270,15 @@ def get_data():
 if mode == "Live":
     # ✅ Initialize signal log in session state if needed
     if "signal_log" not in st.session_state:
-        st.session_state.signal_log = []
+        if download_from_drive("signal_log.csv"):
+            try:
+                df_loaded = pd.read_csv("signal_log.csv")
+                st.session_state.signal_log = df_loaded.to_dict(orient="records")
+            except Exception as e:
+                st.warning(f"⚠️ Failed to load signal log from Drive: {e}")
+                st.session_state.signal_log = []
+        else:
+            st.session_state.signal_log = []
 
     # ✅ Get data and make predictions
     df = get_data()
