@@ -19,7 +19,7 @@ drive_service = build('drive', 'v3', credentials=creds)
 
 MODEL_FILE = "btc_model.pkl"
 LAST_TRAIN_FILE = "last_train.txt"
-FOLDER_NAME = "StreamlitAI"
+FOLDER_NAME = "StreamlitITB"
 
 # ========== Google Drive Functions ==========
 def get_folder_id():
@@ -139,6 +139,7 @@ def train_model():
     model_bytes = pickle.dumps((model, scaler))
     upload_to_drive_stream(io.BytesIO(model_bytes), MODEL_FILE)
     upload_to_drive_content(LAST_TRAIN_FILE, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    st.success("✅ Model and timestamp uploaded to Drive.")
 
     return model, scaler
 
