@@ -98,7 +98,7 @@ if time.time() - st.session_state.last_refresh > 60:
 
 def train_model():
     exchange = ccxt.coinbase()
-    df = pd.DataFrame(exchange.fetch_ohlcv('BTC/USDT', '1m', limit=1500),
+    df = pd.DataFrame(exchange.fetch_ohlcv('BTC/USDT', '1m', limit=5000),
                       columns=['Timestamp', 'Open', 'High', 'Low', 'Close', 'Volume'])
     df['Timestamp'] = pd.to_datetime(df['Timestamp'], unit='ms')
     df.set_index('Timestamp', inplace=True)
@@ -181,7 +181,7 @@ if not os.path.exists(logfile):
 
 # ========== Data Function ==========
 def get_data():
-    df = pd.DataFrame(exchange.fetch_ohlcv('BTC/USDT', '1m', limit=750),
+    df = pd.DataFrame(exchange.fetch_ohlcv('BTC/USDT', '1m', limit=5000),
                       columns=['Timestamp', 'Open', 'High', 'Low', 'Close', 'Volume'])
     df['Timestamp'] = pd.to_datetime(df['Timestamp'], unit='ms').dt.tz_localize('UTC').dt.tz_convert(est)
     df.set_index('Timestamp', inplace=True)
