@@ -229,7 +229,6 @@ def get_data():
 # ========== Live Mode ==========
 if mode == "Live":
     df = get_data()
-    signals = []
     df['Prediction'] = model.predict(scaler.transform(df[features]))
     probs = model.predict_proba(scaler.transform(df[features]))
     df['S0'] = probs[:, 0]
@@ -247,6 +246,7 @@ if mode == "Live":
         signal = 'Short'
         confidence = last['S0']
 
+    signals = []
     if signal:
         signals.append({
             "timestamp": last.name,
@@ -259,7 +259,6 @@ if mode == "Live":
             }
         })
 
-    # Plot
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df.index, y=df['Close'], name='Price', line=dict(color='lightblue')))
     fig.add_trace(go.Scatter(x=df.index, y=df['EMA9'], name='EMA9', line=dict(color='blue')))
@@ -282,6 +281,15 @@ if mode == "Live":
         st.dataframe(pd.DataFrame(signals))
     else:
         st.info("No confident signals generated yet.")
+
+    # ✅ Force Retrain Button Under Chart
+    with st.container():
+        st.markdown("---")
+        if st.button("🔁 Force Retrain", type="primary"):
+            with st.spinner("Retraining model..."):
+                model, scaler = train_model()
+                st.success("✅ Model retrained successfully.")
+                st.rerun()
 
 elif mode == "Backtest":
     df = get_data()
@@ -362,36 +370,3 @@ elif mode == "Backtest":
     else:
         st.warning("No trades detected during this backtest.")
 
-
-    st.subheader(f"📊 BTC Live — ${price:.2f}")
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df.index, y=df['Close'], name="Price", line=dict(color='lightblue')))
-    fig.add_trace(go.Scatter(x=df.index, y=df['EMA9'], name="EMA9", line=dict(color='blue')))
-    fig.add_trace(go.Scatter(x=df.index, y=df['EMA21'], name="EMA21", line=dict(color='orange')))
-    fig.add_trace(go.Scatter(x=df.index, y=df['VWAP'], name="VWAP", line=dict(color='red')))
-
-    df_long = df[(df['Prediction'] == 2) & (df['S2'] > 0.6)]
-    df_short = df[(df['Prediction'] == 0) & (df['S0'] > 0.6)]
-
-    fig.add_trace(go.Scatter(x=df_long.index, y=df_long['Close'], mode='markers', name='📈 Long', marker=dict(color='green')))
-    fig.add_trace(go.Scatter(x=df_short.index, y=df_short['Close'], mode='markers', name='📉 Short', marker=dict(color='red')))
-
-    fig.update_layout(title=f"📈 BTC {mode} — ${price:.2f}",
-                      xaxis_title='Time', yaxis_title='Price',
-                      legend=dict(x=1, y=1),
-                      plot_bgcolor='rgba(0,0,0,0)',
-                      paper_bgcolor='rgba(0,0,0,0)',
-                      font=dict(color='white'))
-
-    st.plotly_chart(fig, use_container_width=True)
-
-    # ✅ Force Retrain Button Under Chart
-    with st.container():
-        st.markdown("---")
-        if st.button("🔁 Force Retrain", type="primary"):
-            with st.spinner("Retraining model..."):
-                model, scaler = train_model()
-                st.success("✅ Model retrained successfully.")
-                st.rerun()
-
-    st.dataframe(pd.read_csv(logfile).tail(10))
