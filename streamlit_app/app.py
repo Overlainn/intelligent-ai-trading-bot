@@ -267,10 +267,10 @@ if mode == "Live":
     signal = None
     confidence = None
 
-    if last['Prediction'] == 2 and last['S2'] > 0.6:
+    if last['Prediction'] == 2 and last['S2'] > 0.52:
         signal = 'Long'
         confidence = last['S2']
-    elif last['Prediction'] == 0 and last['S0'] > 0.6:
+    elif last['Prediction'] == 0 and last['S0'] > 0.52:
         signal = 'Short'
         confidence = last['S0']
 
@@ -334,16 +334,16 @@ elif mode == "Backtest":
     for i in range(1, len(df)):
         row = df.iloc[i]
         if in_position is None:
-            if row['Prediction'] == 2 and row['S2'] > 0.6:
+            if row['Prediction'] == 2 and row['S2'] > 0.52:
                 in_position = "LONG"
                 entry_time = row.name
                 entry_price = row['Close']
-            elif row['Prediction'] == 0 and row['S0'] > 0.6:
+            elif row['Prediction'] == 0 and row['S0'] > 0.52:
                 in_position = "SHORT"
                 entry_time = row.name
                 entry_price = row['Close']
         elif in_position == "LONG":
-            if row['Prediction'] == 0 and row['S0'] > 0.6:
+            if row['Prediction'] == 0 and row['S0'] > 0.52:
                 trades.append({
                     "Entry Time": entry_time,
                     "Exit Time": row.name,
@@ -356,7 +356,7 @@ elif mode == "Backtest":
                 })
                 in_position = None
         elif in_position == "SHORT":
-            if row['Prediction'] == 2 and row['S2'] > 0.6:
+            if row['Prediction'] == 2 and row['S2'] > 0.52:
                 trades.append({
                     "Entry Time": entry_time,
                     "Exit Time": row.name,
