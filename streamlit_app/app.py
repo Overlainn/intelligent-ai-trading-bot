@@ -128,7 +128,10 @@ if time.time() - st.session_state.last_refresh > 60:
 # ========== Model Training ==========
 def train_model():
     df = load_or_fetch_data()
-    upload_to_drive(DATA_FILE)  # ✅ Ensure dataset is always saved to Drive
+
+    # 🔒 Ensure data file exists and is up-to-date
+    df.to_csv(DATA_FILE)  # Overwrite or create locally
+    upload_to_drive(DATA_FILE)  # Upload to Drive
 
     # Feature Engineering
     df['EMA9'] = ta.trend.ema_indicator(df['Close'], window=9)
