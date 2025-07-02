@@ -126,8 +126,9 @@ if time.time() - st.session_state.last_refresh > 60:
     st.session_state.last_refresh = time.time()
     st.rerun()
 
+# ========== Model Training ==========
 def train_model():
-    df = load_or_fetch_data()  # ✅ Use persistent data source
+    df = load_or_fetch_data()
 
     # Feature Engineering
     df['EMA9'] = ta.trend.ema_indicator(df['Close'], window=9)
@@ -139,32 +140,31 @@ def train_model():
     df['ATR'] = ta.volatility.average_true_range(df['High'], df['Low'], df['Close'])
     df['ROC'] = ta.momentum.roc(df['Close'])
     df['OBV'] = ta.volume.on_balance_volume(df['Close'], df['Volume'])
-
     df['EMA12'] = ta.trend.ema_indicator(df['Close'], window=12)
     df['EMA26'] = ta.trend.ema_indicator(df['Close'], window=26)
     df['EMA12_Cross_26'] = (df['EMA12'] > df['EMA26']).astype(int)
     df['EMA9_Cross_21'] = (df['EMA9'] > df['EMA21']).astype(int)
     df['Above_VWAP'] = (df['Close'] > df['VWAP']).astype(int)
 
-    # Label: based on price movement 3 minutes ahead
-    df['Target'] = ((df['Close'].shift(-3) - df['Close']) / df['Close']).apply(
-        lambda x: 2 if x > 0.0015 else (0 if x < -0.0015 else 1))
-
+    df['Future_Close'] = df['Close'].shift(-3)
+    df['Pct_Change'] = (df['Future_Close'] - df['Close']) / df['Close']
+    df['Target'] = df['Pct_Change'].apply(lambda x: 2 if x > 0.0015 else (0 if x < -0.0015 else 1))
     df.dropna(inplace=True)
 
     features = ['EMA9', 'EMA21', 'VWAP', 'RSI', 'MACD', 'MACD_Signal',
                 'ATR', 'ROC', 'OBV', 'EMA12_Cross_26', 'EMA9_Cross_21', 'Above_VWAP']
     X = df[features]
     y = df['Target']
+
     scaler = StandardScaler().fit(X)
     model = RandomForestClassifier(n_estimators=50).fit(scaler.transform(X), y)
 
-    # Save model and timestamp
     model_bytes = pickle.dumps((model, scaler))
     upload_to_drive_stream(io.BytesIO(model_bytes), MODEL_FILE)
     upload_to_drive_content(LAST_TRAIN_FILE, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
     return model, scaler
+
 # ========== Load or Retrain Model ==========
 RETRAIN_INTERVAL = timedelta(hours=12)
 
