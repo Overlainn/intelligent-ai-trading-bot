@@ -256,6 +256,7 @@ def get_data():
 
 # ========== Live Mode ==========
 if mode == "Live":
+    # Make sure signal_log session state exists
     if "signal_log" not in st.session_state:
         st.session_state.signal_log = []
 
@@ -277,7 +278,7 @@ if mode == "Live":
         signal = 'Short'
         confidence = last['S0']
 
-    # Append signal
+    # Append latest signal to session log
     st.session_state.signal_log.append({
         "Timestamp": last.name,
         "Price": last['Close'],
@@ -288,17 +289,9 @@ if mode == "Live":
         "Confidence": round(confidence, 4)
     })
 
-    # Limit to last 100
+    # Keep only the last 100 entries
     if len(st.session_state.signal_log) > 100:
         st.session_state.signal_log = st.session_state.signal_log[-100:]
-
-    # Save log to Excel and upload
-    signal_df = pd.DataFrame(st.session_state.signal_log)
-    excel_file = "btc_signal_log.xlsx"
-    signal_df.to_excel(excel_file, index=False)
-
-    # Upload to Drive
-    upload_to_drive(excel_file)
 
     # 📈 Chart
     fig = go.Figure()
@@ -326,11 +319,11 @@ if mode == "Live":
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # 📋 Signal Log
+    # 📋 Signal Log Table
     st.subheader("📊 Signal Log")
-    st.dataframe(signal_df)
+    st.dataframe(pd.DataFrame(st.session_state.signal_log))
 
-    # 🔁 Retrain Button
+    # 🔁 Force Retrain Button
     with st.container():
         st.markdown("---")
         if st.button("🔁 Force Retrain", type="primary"):
