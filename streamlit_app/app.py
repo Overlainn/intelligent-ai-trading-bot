@@ -347,7 +347,14 @@ if mode == "Live":
 
     # 📋 Signal Log Table
     st.subheader("📊 Signal Log")
+
+    # Convert Timestamp to datetime if not already
+    signal_df['Timestamp'] = pd.to_datetime(signal_df['Timestamp'], errors='coerce')
+
+    # Sort by latest first
     signal_df_sorted = signal_df.sort_values(by="Timestamp", ascending=False)
+
+    # Display
     st.dataframe(signal_df_sorted)
 
     # 🔁 Force Retrain Button
