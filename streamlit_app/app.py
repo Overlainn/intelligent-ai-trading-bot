@@ -265,7 +265,7 @@ if mode == "Live":
 
     last = df.iloc[-1]
     signal = None
-    confidence = None
+    confidence = 0
 
     if last['Prediction'] == 2 and last['S2'] > 0.52:
         signal = 'Long'
@@ -274,33 +274,30 @@ if mode == "Live":
         signal = 'Short'
         confidence = last['S0']
 
-    signals = []
-    if signal:
-        signals.append({
-            "timestamp": last.name,
-            "price": last['Close'],
-            "signal": signal,
-            "scores": {
-                "Short": round(last['S0'], 2),
-                "Neutral": round(last['S1'], 2),
-                "Long": round(last['S2'], 2),
-                "Confidence": round(confidence, 2)
-            }
-        })
+    # Always append signal data for display
+    signals = [{
+        "Timestamp": last.name,
+        "Price": last['Close'],
+        "Signal": signal if signal else "None",
+        "Short": round(last['S0'], 4),
+        "Neutral": round(last['S1'], 4),
+        "Long": round(last['S2'], 4),
+        "Confidence": round(confidence, 4)
+    }]
 
-    # 📈 Chart with indicators and signal marker
+    # 📈 Chart with indicators and optional signal marker
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df.index, y=df['Close'], name='Price', line=dict(color='lightblue')))
     fig.add_trace(go.Scatter(x=df.index, y=df['EMA9'], name='EMA9', line=dict(color='blue')))
     fig.add_trace(go.Scatter(x=df.index, y=df['EMA21'], name='EMA21', line=dict(color='orange')))
     fig.add_trace(go.Scatter(x=df.index, y=df['VWAP'], name='VWAP', line=dict(color='red')))
 
-    for s in signals:
+    if signal:
         fig.add_trace(go.Scatter(
-            x=[s['timestamp']], y=[s['price']],
+            x=[last.name], y=[last['Close']],
             mode='markers',
-            marker=dict(color='green' if s['signal'] == 'Long' else 'red', size=10),
-            name=s['signal']
+            marker=dict(color='green' if signal == 'Long' else 'red', size=10),
+            name=signal
         ))
 
     fig.update_layout(
@@ -316,16 +313,7 @@ if mode == "Live":
 
     # 📋 Signal Log Table
     st.subheader("📊 Signal Log")
-    if signals:
-        flat_signals = [{
-            "Time": s["timestamp"],
-            "Price": s["price"],
-            "Signal": s["signal"],
-            **s["scores"]
-        } for s in signals]
-        st.dataframe(pd.DataFrame(flat_signals))
-    else:
-        st.info("No confident signals generated yet.")
+    st.dataframe(pd.DataFrame(signals))
 
     # 🔁 Force Retrain Button
     with st.container():
@@ -335,7 +323,6 @@ if mode == "Live":
                 model, scaler = train_model()
                 st.success("✅ Model retrained successfully.")
                 st.rerun()
-
 elif mode == "Backtest":
     df = get_data()
     trades = []
