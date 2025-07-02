@@ -256,6 +256,10 @@ def get_data():
 
 # ========== Live Mode ==========
 if mode == "Live":
+    # Make sure signal_log session state exists
+    if "signal_log" not in st.session_state:
+        st.session_state.signal_log = []
+
     df = get_data()
     df['Prediction'] = model.predict(scaler.transform(df[features]))
     probs = model.predict_proba(scaler.transform(df[features]))
@@ -274,8 +278,8 @@ if mode == "Live":
         signal = 'Short'
         confidence = last['S0']
 
-    # Always append signal data for display
-    signals = [{
+    # Append latest signal to session log
+    st.session_state.signal_log.append({
         "Timestamp": last.name,
         "Price": last['Close'],
         "Signal": signal if signal else "None",
@@ -283,9 +287,13 @@ if mode == "Live":
         "Neutral": round(last['S1'], 4),
         "Long": round(last['S2'], 4),
         "Confidence": round(confidence, 4)
-    }]
+    })
 
-    # 📈 Chart with indicators and optional signal marker
+    # Keep only the last 100 entries
+    if len(st.session_state.signal_log) > 100:
+        st.session_state.signal_log = st.session_state.signal_log[-100:]
+
+    # 📈 Chart
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df.index, y=df['Close'], name='Price', line=dict(color='lightblue')))
     fig.add_trace(go.Scatter(x=df.index, y=df['EMA9'], name='EMA9', line=dict(color='blue')))
@@ -313,7 +321,7 @@ if mode == "Live":
 
     # 📋 Signal Log Table
     st.subheader("📊 Signal Log")
-    st.dataframe(pd.DataFrame(signals))
+    st.dataframe(pd.DataFrame(st.session_state.signal_log))
 
     # 🔁 Force Retrain Button
     with st.container():
@@ -323,6 +331,7 @@ if mode == "Live":
                 model, scaler = train_model()
                 st.success("✅ Model retrained successfully.")
                 st.rerun()
+
 elif mode == "Backtest":
     df = get_data()
     trades = []
