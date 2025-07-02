@@ -6,7 +6,6 @@ scikit-learn>=1.4.1
 ccxt>=4.1.89
 requests>=2.31.0
 plotly>=5.22.0
-openpyxl
 
 google-api-python-client>=2.126.0
 google-auth>=2.29.0
