@@ -19,7 +19,8 @@ drive_service = build('drive', 'v3', credentials=creds)
 
 MODEL_FILE = "btc_model.pkl"
 LAST_TRAIN_FILE = "last_train.txt"
-FOLDER_NAME = "StreamlitITB"
+DATA_FILE = "btc_data.csv"
+FOLDER_NAME = "StreamlitAI"
 
 # ========== Google Drive Functions ==========
 def get_folder_id():
@@ -42,9 +43,9 @@ def upload_to_drive_stream(file_stream, filename):
     drive_service.files().create(body=file_metadata, media_body=media).execute()
 
 def upload_to_drive_content(filename, content):
-    with open("last_train.txt", "w") as f:
+    with open("temp.txt", "w") as f:
         f.write(content)
-    upload_to_drive("last_train.txt")
+    upload_to_drive("temp.txt")
 
 def upload_to_drive(filename):
     folder_id = get_folder_id()
@@ -78,6 +79,35 @@ def load_model_from_drive():
         return train_model()
     with open(MODEL_FILE, 'rb') as f:
         return pickle.load(f)
+
+# ========== Historical Data Fetching ==========
+def fetch_paginated_ohlcv(symbol='BTC/USDT', timeframe='1m', days=90):
+    exchange = ccxt.coinbase()
+    since = exchange.milliseconds() - days * 24 * 60 * 60 * 1000
+    all_data = []
+    while True:
+        data = exchange.fetch_ohlcv(symbol, timeframe, since=since, limit=1000)
+        if not data:
+            break
+        all_data.extend(data)
+        since = data[-1][0] + 60_000
+        if len(data) < 1000:
+            break
+        time.sleep(exchange.rateLimit / 1000)
+    df = pd.DataFrame(all_data, columns=['Timestamp', 'Open', 'High', 'Low', 'Close', 'Volume'])
+    df['Timestamp'] = pd.to_datetime(df['Timestamp'], unit='ms')
+    df.set_index('Timestamp', inplace=True)
+    return df
+
+def load_or_fetch_data():
+    if not os.path.exists(DATA_FILE):
+        if not download_from_drive(DATA_FILE):
+            df = fetch_paginated_ohlcv()
+            df.to_csv(DATA_FILE)
+            upload_to_drive(DATA_FILE)
+            return df
+    df = pd.read_csv(DATA_FILE, index_col='Timestamp', parse_dates=True)
+    return df
 
 # ========== Push Notifications ==========
 push_user_key = st.secrets["pushover"]["user"]
