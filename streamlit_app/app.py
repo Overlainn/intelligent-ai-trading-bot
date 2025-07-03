@@ -44,44 +44,6 @@ SERVICE_ACCOUNT_INFO = st.secrets["google_service_account"]
 creds = service_account.Credentials.from_service_account_info(SERVICE_ACCOUNT_INFO, scopes=SCOPES)
 drive_service = build('drive', 'v3', credentials=creds)
 
-# ========== Local Training Functions ==========
-def get_training_data():
-    if os.path.exists(DATA_FILE):
-        df = pd.read_csv(DATA_FILE)
-
-        # Feature Engineering
-        df['Future_Close'] = df['Close'].shift(-3)
-        df['Pct_Change'] = (df['Future_Close'] - df['Close']) / df['Close']
-        df['Target'] = df['Pct_Change'].apply(lambda x: 2 if x > 0.003 else (0 if x < -0.003 else 1))
-        df.dropna(inplace=True)
-
-        return df.dropna()
-    st.error(f"❌ Training data '{DATA_FILE}' not found.")
-    return pd.DataFrame()
-
-def load_model_and_scaler():
-    if os.path.exists(MODEL_FILE) and os.path.exists(SCALER_FILE):
-        model = joblib.load(MODEL_FILE)
-        scaler = joblib.load(SCALER_FILE)
-        return model, scaler
-    return train_model()
-
-def load_model_from_drive():
-    if not download_from_drive(MODEL_FILE):
-        st.error("❌ Failed to load model from Drive. Training new one.")
-        return train_model()
-    with open(MODEL_FILE, 'rb') as f:
-        return pickle.load(f)
-
-def load_scaler():
-    if not download_from_drive(SCALER_FILE):
-        st.error("❌ Failed to load scaler from Drive. Training new one.")
-        return train_model()[1]
-    return joblib.load(SCALER_FILE)
-
-# ✅ Load model/scaler at startup
-model, scaler = load_model_and_scaler()
-
 # ========== Google Drive Functions ==========
 def get_folder_id():
     query = f"name='{FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder'"
@@ -268,6 +230,44 @@ def train_model():
     upload_to_drive_content(LAST_TRAIN_FILE, timestamp)
 
     return model, scaler
+
+# ========== Local Training Functions ==========
+def get_training_data():
+    if os.path.exists(DATA_FILE):
+        df = pd.read_csv(DATA_FILE)
+
+        # Feature Engineering
+        df['Future_Close'] = df['Close'].shift(-3)
+        df['Pct_Change'] = (df['Future_Close'] - df['Close']) / df['Close']
+        df['Target'] = df['Pct_Change'].apply(lambda x: 2 if x > 0.003 else (0 if x < -0.003 else 1))
+        df.dropna(inplace=True)
+
+        return df.dropna()
+    st.error(f"❌ Training data '{DATA_FILE}' not found.")
+    return pd.DataFrame()
+
+def load_model_and_scaler():
+    if os.path.exists(MODEL_FILE) and os.path.exists(SCALER_FILE):
+        model = joblib.load(MODEL_FILE)
+        scaler = joblib.load(SCALER_FILE)
+        return model, scaler
+    return train_model()
+
+def load_model_from_drive():
+    if not download_from_drive(MODEL_FILE):
+        st.error("❌ Failed to load model from Drive. Training new one.")
+        return train_model()
+    with open(MODEL_FILE, 'rb') as f:
+        return pickle.load(f)
+
+def load_scaler():
+    if not download_from_drive(SCALER_FILE):
+        st.error("❌ Failed to load scaler from Drive. Training new one.")
+        return train_model()[1]
+    return joblib.load(SCALER_FILE)
+
+# ✅ Load model/scaler at startup
+model, scaler = load_model_and_scaler()
 
 # ========== Load or Retrain Model ==========
 RETRAIN_INTERVAL = timedelta(hours=12)
