@@ -147,6 +147,7 @@ def load_or_fetch_data():
         df = fetch_paginated_ohlcv()
         df.reset_index(inplace=True)  # Converts index back to Timestamp column
         df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
+    if not os.path.exists(DATA_FILE):
         df.to_csv(DATA_FILE, index=False)
         upload_to_drive(DATA_FILE)
         return df
@@ -351,8 +352,8 @@ mode = st.radio("Mode", ["Live", "Backtest"], horizontal=True)
 est = pytz.timezone('US/Eastern')
 exchange = ccxt.coinbase()
 logfile = "btc_alert_log.csv"
-if not os.path.exists(logfile):
-    pd.DataFrame(columns=["Timestamp", "Price", "Signal", "Scores"]).to_csv(logfile, index=False)
+if not os.path.exists(logfile) and "signal_log" in st.session_state and st.session_state.signal_log:
+    pd.DataFrame(st.session_state.signal_log).to_csv(logfile, index=False)
 
 # ========== Data Function ==========
 def get_data():
