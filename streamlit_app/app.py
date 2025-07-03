@@ -95,7 +95,7 @@ def upload_to_drive_content(filename, content):
 
 def download_from_drive(filename):
     try:
-        folder_id = get_folder_id(FOLDER_NAME)
+        folder_id = get_folder_id()
         query = f"'{folder_id}' in parents and name = '{filename}' and trashed = false"
         results = drive_service.files().list(q=query, fields="files(id, name)").execute()
         items = results.get('files', [])
