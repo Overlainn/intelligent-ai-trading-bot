@@ -48,6 +48,13 @@ drive_service = build('drive', 'v3', credentials=creds)
 def get_training_data():
     if os.path.exists(DATA_FILE):
         df = pd.read_csv(DATA_FILE)
+
+        # Feature Engineering
+        df['Future_Close'] = df['Close'].shift(-3)
+        df['Pct_Change'] = (df['Future_Close'] - df['Close']) / df['Close']
+        df['Target'] = df['Pct_Change'].apply(lambda x: 2 if x > 0.003 else (0 if x < -0.003 else 1))
+        df.dropna(inplace=True)
+
         return df.dropna()
     st.error(f"❌ Training data '{DATA_FILE}' not found.")
     return pd.DataFrame()
