@@ -215,17 +215,19 @@ def train_model():
     X = df[features]
     y = df['Target']
 
-class_counts = y.value_counts(normalize=True)
-st.write("📊 Target class distribution:", class_counts)
+    # ✅ Show class balance
+    class_counts = y.value_counts(normalize=True)
+    st.write("📊 Target class distribution:", class_counts)
 
-expected_classes = [0, 1, 2]
-actual_classes = sorted(y.unique())
-missing_classes = set(expected_classes) - set(actual_classes)
+    expected_classes = [0, 1, 2]
+    actual_classes = sorted(y.unique())
+    missing_classes = set(expected_classes) - set(actual_classes)
 
-if missing_classes:
-    st.warning(f"⚠️ Missing classes in training data: {missing_classes}")
-    return None, None
+    if missing_classes:
+        st.warning(f"⚠️ Missing classes in training data: {missing_classes}")
+        return None, None
 
+    # ✅ Continue training
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
@@ -253,7 +255,7 @@ if missing_classes:
     upload_to_drive_content(LAST_TRAIN_FILE, timestamp)
 
     return model, scaler
-
+  
 # ========== Utility Functions ==========
 
 def save_last_train_time():
