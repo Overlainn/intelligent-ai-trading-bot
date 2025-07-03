@@ -333,7 +333,7 @@ def train_model():
 
 # ========== Local Training Functions ==========
 
-RETRAIN_INTERVAL = timedelta(hours=12)
+
 
 def save_last_train_time():
     timestamp = datetime.now().replace(microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
@@ -578,7 +578,11 @@ if mode == "Live":
     df = get_data()
     features = ['EMA9', 'EMA21', 'VWAP', 'RSI', 'MACD', 'MACD_Signal',
             'ATR', 'ROC', 'OBV', 'EMA12_Cross_26', 'EMA9_Cross_21', 'Above_VWAP']
-    X = scaler.transform(df[features])
+
+    if model is None or scaler is None:
+        st.error("❌ Model or scaler is not loaded. Please retrain or check Drive access.")
+        st.stop()
+    
     raw_probs = model.predict_proba(X)
 
     # Ensure 3 class probabilities
