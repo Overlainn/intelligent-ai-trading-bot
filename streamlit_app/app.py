@@ -472,6 +472,12 @@ if mode == "Live":
         signal = 'Short'
         confidence = last['S0']
 
+    # ✅ Remove existing entry for same timestamp
+    st.session_state.signal_log = [
+        entry for entry in st.session_state.signal_log
+        if pd.to_datetime(entry["Timestamp"], errors="coerce") != last.name
+    ]
+
     # ✅ Log every 15min prediction regardless of signal strength
     st.session_state.signal_log.append({
         "Timestamp": last.name,
