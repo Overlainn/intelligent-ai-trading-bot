@@ -454,12 +454,12 @@ def load_scaler():
         return train_model()[1]
     return joblib.load(SCALER_FILE)
 
-# ✅ Use once at startup
-model, scaler = load_model_and_scaler()
-
 # 🔧 Feature list used in model
 features = ['EMA9', 'EMA21', 'VWAP', 'RSI', 'MACD', 'MACD_Signal',
             'ATR', 'ROC', 'OBV', 'EMA12_Cross_26', 'EMA9_Cross_21', 'Above_VWAP']
+
+# ✅ Use once at startup
+model, scaler = load_model_and_scaler()
 
 # ========== UI ==========
 st.set_page_config(layout='wide')
