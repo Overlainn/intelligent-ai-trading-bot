@@ -22,7 +22,6 @@ import streamlit as st
 import pytz
 
 # Google Drive
-import hashlib
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload, MediaFileUpload
@@ -57,142 +56,68 @@ def get_folder_id():
     folder = drive_service.files().create(body=file_metadata, fields='id').execute()
     return folder['id']
 
-def upload_to_drive(filename):
+def upload_to_drive(filename, drive_name=None):
     folder_id = get_folder_id()
+    file_name = drive_name or os.path.basename(filename)
+    media = MediaFileUpload(filename, resumable=True)
+    body = {'name': file_name, 'parents': [folder_id]}
 
-    # Load local file content
-    if not os.path.exists(filename):
-        st.error(f"⚠️ Local file '{filename}' not found for upload.")
-        return
+    existing = drive_service.files().list(
+        q=f"name='{file_name}' and '{folder_id}' in parents",
+        fields='files(id)'
+    ).execute().get('files', [])
 
-    with open(filename, 'rb') as f:
-        local_content = f.read()
-
-    # Search for existing file on Drive
-    query = f"'{folder_id}' in parents and name='{filename}' and trashed=false"
-    response = drive_service.files().list(q=query).execute()
-    files = response.get('files', [])
-
-    # Check if the remote file exists and is identical
-    if files:
-        file_id = files[0]['id']
-
-        # Download remote file content to compare
-        request = drive_service.files().get_media(fileId=file_id)
-        fh = io.BytesIO()
-        downloader = MediaIoBaseDownload(fh, request)
-        done = False
-        while not done:
-            _, done = downloader.next_chunk()
-
-        # ✅ Use hash comparison
-        remote_hash = hashlib.sha256(fh.getvalue()).hexdigest()
-        local_hash = hashlib.sha256(local_content).hexdigest()
-        if remote_hash == local_hash:
-            return
-
-        # ❌ Content differs, delete and re-upload
-        drive_service.files().delete(fileId=file_id).execute()
-
-    # ✅ Upload updated file
-    file_metadata = {'name': filename, 'parents': [folder_id]}
-    media = MediaFileUpload(filename)
-    drive_service.files().create(body=file_metadata, media_body=media).execute()
-
-def upload_to_drive_content(filename, content):
-    folder_id = get_folder_id()
-    local_buffer = content.encode()
-
-    # Search for existing file
-    query = f"'{folder_id}' in parents and name='{filename}' and trashed=false"
-    response = drive_service.files().list(q=query).execute()
-    files = response.get('files', [])
-
-    if files:
-        file_id = files[0]['id']
-
-        # Download current content
-        request = drive_service.files().get_media(fileId=file_id)
-        fh = io.BytesIO()
-        downloader = MediaIoBaseDownload(fh, request)
-        done = False
-        while not done:
-            _, done = downloader.next_chunk()
-
-        # ✅ Use hash comparison
-        remote_hash = hashlib.sha256(fh.getvalue()).hexdigest()
-        local_hash = hashlib.sha256(local_buffer).hexdigest()
-        if remote_hash == local_hash:
-            return
-
-        drive_service.files().delete(fileId=file_id).execute()
-
-    media = MediaIoBaseUpload(io.BytesIO(local_buffer), mimetype='text/plain')
-    file_metadata = {'name': filename, 'parents': [folder_id]}
-    drive_service.files().create(body=file_metadata, media_body=media).execute()
+    if existing:
+        drive_service.files().delete(fileId=existing[0]['id']).execute()
+    drive_service.files().create(body=body, media_body=media).execute()
 
 def upload_to_drive_stream(file_stream, filename):
     folder_id = get_folder_id()
-    file_stream.seek(0)
-    local_content = file_stream.read()
+    media = MediaIoBaseUpload(file_stream, mimetype='application/octet-stream', resumable=True)
+    file_metadata = {'name': filename, 'parents': [folder_id]}
 
-    # Search for existing file
-    query = f"'{folder_id}' in parents and name='{filename}' and trashed=false"
-    response = drive_service.files().list(q=query).execute()
-    files = response.get('files', [])
+    existing = drive_service.files().list(
+        q=f"name='{filename}' and '{folder_id}' in parents",
+        fields='files(id)'
+    ).execute().get('files', [])
 
-    if files:
-        file_id = files[0]['id']
+    if existing:
+        try:
+            drive_service.files().delete(fileId=existing[0]['id']).execute()
+        except Exception as e:
+            print(f"⚠️ Warning: Couldn't delete existing file '{filename}': {e}")
+    drive_service.files().create(body=file_metadata, media_body=media).execute()
 
-        # Download remote content
+def upload_to_drive_content(filename, content):
+    with open(filename, "w") as f:
+        f.write(content)
+    upload_to_drive(filename)
+
+def download_from_drive(filename):
+    try:
+        folder_id = get_folder_id(FOLDER_NAME)
+        query = f"'{folder_id}' in parents and name = '{filename}' and trashed = false"
+        results = drive_service.files().list(q=query, fields="files(id, name)").execute()
+        items = results.get('files', [])
+
+        if not items:
+            st.warning(f"📁 File '{filename}' not found in Drive folder '{FOLDER_NAME}'.")
+            return False
+
+        file_id = items[0]['id']
         request = drive_service.files().get_media(fileId=file_id)
-        fh = io.BytesIO()
+        fh = io.FileIO(filename, 'wb')
         downloader = MediaIoBaseDownload(fh, request)
         done = False
         while not done:
             _, done = downloader.next_chunk()
 
-        # ✅ Use hash comparison
-        remote_hash = hashlib.sha256(fh.getvalue()).hexdigest()
-        local_hash = hashlib.sha256(local_content).hexdigest()
-        if remote_hash == local_hash:
-            return
-
-        drive_service.files().delete(fileId=file_id).execute()
-
-    file_stream.seek(0)
-    media = MediaIoBaseUpload(file_stream, mimetype='application/octet-stream')
-    file_metadata = {'name': filename, 'parents': [folder_id]}
-    drive_service.files().create(body=file_metadata, media_body=media).execute()
-
-def download_from_drive(filename):
-    if os.path.exists(filename):
-        print(f"📂 '{filename}' already exists locally. Skipping download.")
+        st.success(f"✅ Downloaded '{filename}' from Drive.")
         return True
 
-    folder_id = get_folder_id()
-    query = f"'{folder_id}' in parents and name='{filename}' and trashed=false"
-    response = drive_service.files().list(q=query).execute()
-    files = response.get('files', [])
-
-    if not files:
-        print(f"❌ '{filename}' not found on Drive.")
+    except Exception as e:
+        st.error(f"❌ Error downloading {filename}: {e}")
         return False
-
-    file_id = files[0]['id']
-    request = drive_service.files().get_media(fileId=file_id)
-    fh = io.BytesIO()
-    downloader = MediaIoBaseDownload(fh, request)
-
-    done = False
-    while not done:
-        status, done = downloader.next_chunk()
-
-    with open(filename, 'wb') as f:
-        f.write(fh.getvalue())
-
-    print(f"✅ Downloaded '{filename}' from Drive.")
-    return True
 
 # ========== Historical Data Fetching ==========
 def fetch_paginated_ohlcv(symbol='BTC/USDT', timeframe='15m', days=90):
@@ -290,16 +215,15 @@ def train_model():
     df['Pct_Change'] = (df['Future_Close'] - df['Close']) / df['Close']
     df['Target'] = df['Pct_Change'].apply(lambda x: 2 if x > 0.003 else (0 if x < -0.003 else 1))
 
-    # Drop rows with NaNs
     df.dropna(inplace=True)
 
-    # Feature and Target Split
+    # Feature/Target split
     features = ['EMA9', 'EMA21', 'VWAP', 'RSI', 'MACD', 'MACD_Signal',
                 'ATR', 'ROC', 'OBV', 'EMA12_Cross_26', 'EMA9_Cross_21', 'Above_VWAP']
     X = df[features]
     y = df['Target']
 
-    # ✅ Missing Class Check
+    # ✅ Check class balance
     expected_classes = [0, 1, 2]
     actual_classes = sorted(y.unique())
     missing_classes = set(expected_classes) - set(actual_classes)
@@ -308,37 +232,31 @@ def train_model():
         st.warning(f"⚠️ Missing classes in training data: {missing_classes}")
         return None, None
 
-    # Scaling & Training
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
-    # ✅ Balanced class weights
     class_weights = compute_class_weight('balanced', classes=np.array(expected_classes), y=y)
     weight_dict = dict(zip(expected_classes, class_weights))
 
     model = RandomForestClassifier(n_estimators=50, random_state=42, class_weight=weight_dict)
     model.fit(X_scaled, y)
 
-    # Serialize Model + Scaler
+    # Save model to Drive
     model_bytes = pickle.dumps((model, scaler))
     upload_to_drive_stream(io.BytesIO(model_bytes), MODEL_FILE)
 
-    # ✅ Save training timestamp ONLY after successful training
+    # Save training timestamp
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open(LAST_TRAIN_FILE, 'w') as f:
-        f.write(timestamp)
-    upload_to_drive(LAST_TRAIN_FILE)
+    upload_to_drive_content(LAST_TRAIN_FILE, timestamp)
 
     return model, scaler
-
 # ========== Utility Functions ==========
 
 def save_last_train_time():
-    timestamp = datetime.now().replace(microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
     try:
         with open(LAST_TRAIN_FILE, 'w') as f:
-            f.write(timestamp)
-        upload_to_drive_content(LAST_TRAIN_FILE, timestamp)
+            f.write(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        upload_to_drive(LAST_TRAIN_FILE)
     except Exception as e:
         st.error(f"❌ Failed to save last train time: {e}")
 
@@ -375,16 +293,19 @@ def get_training_data():
     return pd.DataFrame()
 
 def load_model_and_scaler():
-    if should_retrain():
-        return train_model()
-    else:
-        # Load locally or from drive
-        if os.path.exists(MODEL_FILE) and os.path.exists(SCALER_FILE):
+    """
+    Loads the model and scaler from local files if available and valid.
+    If they are missing or unreadable, it triggers training from scratch.
+    """
+    if os.path.exists(MODEL_FILE) and os.path.exists(SCALER_FILE):
+        try:
             model = joblib.load(MODEL_FILE)
             scaler = joblib.load(SCALER_FILE)
             return model, scaler
-        else:
-            return train_model()
+        except Exception as e:
+            st.warning(f"⚠️ Error loading local model/scaler: {e}")
+            st.info("🔁 Re-training model due to load error.")
+    return train_model()
 
 def load_model_from_drive():
     if not download_from_drive(MODEL_FILE):
@@ -406,29 +327,27 @@ model, scaler = load_model_and_scaler()
 RETRAIN_INTERVAL = timedelta(hours=12)
 
 def should_retrain():
-    if not os.path.exists(LAST_TRAIN_FILE):
-        st.warning("📄 'last_train.txt' not found locally. Attempting to download from Drive...")
-        if not download_from_drive(LAST_TRAIN_FILE):
-            st.warning("📄 'last_train.txt' not found on Drive. Retraining.")
-            return True
-
+    if not download_from_drive(LAST_TRAIN_FILE):
+        st.warning("📄 No last_train.txt found on Drive. Retraining.")
+        return True
     try:
         with open(LAST_TRAIN_FILE, 'r') as f:
             last_train_str = f.read().strip()
         last_train_time = datetime.strptime(last_train_str, "%Y-%m-%d %H:%M:%S")
         if datetime.now() - last_train_time > RETRAIN_INTERVAL:
-            st.info("🕒 Retraining required. More than 12 hours passed.")
+            st.info("🕒 12 hours passed. Retraining model.")
             return True
         else:
-            st.success("✅ Recent training detected. Skipping retrain.")
+            st.success("✅ Model recently trained. Skipping retrain.")
             return False
     except Exception as e:
-        st.error(f"⚠️ Error parsing 'last_train.txt': {e}")
+        st.error(f"⚠️ Error reading last_train.txt: {e}")
         return True
 
 # Only automatic retrain or load from drive — no sidebar button
 if should_retrain():
     model, scaler = train_model()
+    save_last_train_time()
 else:
     model, scaler = load_model_from_drive()
 
