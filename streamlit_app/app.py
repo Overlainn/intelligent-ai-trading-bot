@@ -236,17 +236,23 @@ def get_training_data():
     if os.path.exists(DATA_FILE):
         df = pd.read_csv(DATA_FILE)
 
-        # Ensure Timestamp is datetime
+        # ✅ Ensure Timestamp is a column and datetime
+        if 'Timestamp' not in df.columns and df.index.name == 'Timestamp':
+            df.reset_index(inplace=True)
         if 'Timestamp' in df.columns:
-            df['Timestamp'] = pd.to_datetime(df['Timestamp'])
+            df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
 
-        # Feature Engineering
+        # ✅ Save cleaned version
+        df.to_csv(DATA_FILE, index=False)
+
+        # ✅ Feature Engineering
         df['Future_Close'] = df['Close'].shift(-3)
         df['Pct_Change'] = (df['Future_Close'] - df['Close']) / df['Close']
         df['Target'] = df['Pct_Change'].apply(lambda x: 2 if x > 0.003 else (0 if x < -0.003 else 1))
         df.dropna(inplace=True)
 
         return df
+
     st.error(f"❌ Training data '{DATA_FILE}' not found.")
     return pd.DataFrame()
 
