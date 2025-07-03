@@ -485,6 +485,7 @@ if mode == "Live":
     signal_df = pd.DataFrame(st.session_state.signal_log)
     signal_df.to_csv("signal_log.csv", index=False)
     upload_to_drive("signal_log.csv")
+    signal_df["Timestamp"] = pd.to_datetime(signal_df["Timestamp"], errors="coerce")
 
     # 📈 Plot Price + Indicators
     fig = go.Figure()
@@ -515,6 +516,7 @@ if mode == "Live":
     # 📋 Signal Log Table
     st.subheader("📊 Signal Log")
     if not signal_df.empty and "Timestamp" in signal_df.columns:
+        signal_df["Timestamp"] = pd.to_datetime(signal_df["Timestamp"], errors="coerce")
         st.dataframe(signal_df.sort_values(by="Timestamp", ascending=False), use_container_width=True)
     else:
         st.info("No signals logged yet.")
