@@ -46,7 +46,8 @@ creds = service_account.Credentials.from_service_account_info(SERVICE_ACCOUNT_IN
 drive_service = build('drive', 'v3', credentials=creds)
 
 # ========== Google Drive Functions ==========
-def folder_id = get_folder_id():
+def folder_id():
+    return get_folder_id()
     query = f"name='{FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder'"
     response = drive_service.files().list(q=query, spaces='drive', fields='files(id)').execute()
     files = response.get('files', [])
