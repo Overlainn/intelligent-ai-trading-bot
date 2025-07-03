@@ -278,24 +278,23 @@ def train_model():
     df['Future_Close'] = df['Close'].shift(-3)
     df['Pct_Change'] = (df['Future_Close'] - df['Close']) / df['Close']
     df['Target'] = df['Pct_Change'].apply(lambda x: 2 if x > 0.003 else (0 if x < -0.003 else 1))
-
     df.dropna(inplace=True)
 
-    # Feature/Target split
+    # Feature and Target Split
     features = ['EMA9', 'EMA21', 'VWAP', 'RSI', 'MACD', 'MACD_Signal',
                 'ATR', 'ROC', 'OBV', 'EMA12_Cross_26', 'EMA9_Cross_21', 'Above_VWAP']
     X = df[features]
     y = df['Target']
 
-    # ✅ Check class balance
+    # ✅ Class check
     expected_classes = [0, 1, 2]
     actual_classes = sorted(y.unique())
     missing_classes = set(expected_classes) - set(actual_classes)
-
     if missing_classes:
         st.warning(f"⚠️ Missing classes in training data: {missing_classes}")
         return None, None
 
+    # Scaling & Training
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
@@ -305,15 +304,18 @@ def train_model():
     model = RandomForestClassifier(n_estimators=50, random_state=42, class_weight=weight_dict)
     model.fit(X_scaled, y)
 
-    # Save model to Drive
+    # ✅ Save model and scaler
     model_bytes = pickle.dumps((model, scaler))
     upload_to_drive_stream(io.BytesIO(model_bytes), MODEL_FILE)
 
-    # Save training timestamp
+    # ✅ Save last training time only after successful training
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    upload_to_drive_content(LAST_TRAIN_FILE, timestamp)
+    with open(LAST_TRAIN_FILE, 'w') as f:
+        f.write(timestamp)
+    upload_to_drive(LAST_TRAIN_FILE)
 
     return model, scaler
+
 # ========== Utility Functions ==========
 
 def save_last_train_time():
