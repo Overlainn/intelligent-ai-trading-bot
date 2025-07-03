@@ -46,8 +46,7 @@ creds = service_account.Credentials.from_service_account_info(SERVICE_ACCOUNT_IN
 drive_service = build('drive', 'v3', credentials=creds)
 
 # ========== Google Drive Functions ==========
-def folder_id():
-    return get_folder_id()
+def get_folder_id():
     query = f"name='{FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder'"
     response = drive_service.files().list(q=query, spaces='drive', fields='files(id)').execute()
     files = response.get('files', [])
@@ -95,30 +94,21 @@ def upload_to_drive_content(filename, content):
     upload_to_drive(filename)
 
 def download_from_drive(filename):
-    try:
-        folder_id = get_folder_id(FOLDER_NAME)
-        query = f"'{folder_id}' in parents and name = '{filename}' and trashed = false"
-        results = drive_service.files().list(q=query, fields="files(id, name)").execute()
-        items = results.get('files', [])
-
-        if not items:
-            st.warning(f"📁 File '{filename}' not found in Drive folder '{FOLDER_NAME}'.")
-            return False
-
-        file_id = items[0]['id']
-        request = drive_service.files().get_media(fileId=file_id)
-        fh = io.FileIO(filename, 'wb')
-        downloader = MediaIoBaseDownload(fh, request)
-        done = False
-        while not done:
-            _, done = downloader.next_chunk()
-
-        st.success(f"✅ Downloaded '{filename}' from Drive.")
-        return True
-
-    except Exception as e:
-        st.error(f"❌ Error downloading {filename}: {e}")
+    folder_id = get_folder_id()
+    results = drive_service.files().list(q=f"name='{filename}' and '{folder_id}' in parents", fields="files(id)").execute()
+    files = results.get('files', [])
+    if not files:
         return False
+    file_id = files[0]['id']
+    request = drive_service.files().get_media(fileId=file_id)
+    fh = io.BytesIO()
+    downloader = MediaIoBaseDownload(fh, request)
+    done = False
+    while not done:
+        _, done = downloader.next_chunk()
+    with open(filename, 'wb') as f:
+        f.write(fh.getvalue())
+    return True
 
 # ========== Historical Data Fetching ==========
 def fetch_paginated_ohlcv(symbol='BTC/USDT', timeframe='15m', days=90):
@@ -157,7 +147,6 @@ def load_or_fetch_data():
         df = fetch_paginated_ohlcv()
         df.reset_index(inplace=True)  # Converts index back to Timestamp column
         df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
-    if not os.path.exists(DATA_FILE):
         df.to_csv(DATA_FILE, index=False)
         upload_to_drive(DATA_FILE)
         return df
@@ -263,8 +252,8 @@ def save_last_train_time():
 
 def load_model_from_drive():
     if not download_from_drive(MODEL_FILE):
-        st.error("❌ Failed to load model from Drive.")
-        return None, None
+        st.error("❌ Failed to load model from Drive. Training new one.")
+        return train_model()
     with open(MODEL_FILE, 'rb') as f:
         return pickle.load(f)
 
@@ -362,8 +351,8 @@ mode = st.radio("Mode", ["Live", "Backtest"], horizontal=True)
 est = pytz.timezone('US/Eastern')
 exchange = ccxt.coinbase()
 logfile = "btc_alert_log.csv"
-if not os.path.exists(logfile) and "signal_log" in st.session_state and st.session_state.signal_log:
-    pd.DataFrame(st.session_state.signal_log).to_csv(logfile, index=False)
+if not os.path.exists(logfile):
+    pd.DataFrame(columns=["Timestamp", "Price", "Signal", "Scores"]).to_csv(logfile, index=False)
 
 # ========== Data Function ==========
 def get_data():
