@@ -206,7 +206,7 @@ def train_model():
     # Target Engineering
     df['Future_Close'] = df['Close'].shift(-3)
     df['Pct_Change'] = (df['Future_Close'] - df['Close']) / df['Close']
-    df['Target'] = df['Pct_Change'].apply(lambda x: 2 if x > 0.0003 else (0 if x < -0.0003 else 1))
+    df['Target'] = df['Pct_Change'].apply(lambda x: 2 if x > 0.0006 else (0 if x < -0.0006 else 1))
 
     df.dropna(inplace=True)
 
@@ -290,7 +290,7 @@ def get_training_data():
         # ✅ Feature Engineering
         df['Future_Close'] = df['Close'].shift(-3)
         df['Pct_Change'] = (df['Future_Close'] - df['Close']) / df['Close']
-        df['Target'] = df['Pct_Change'].apply(lambda x: 2 if x > 0.0003 else (0 if x < -0.0003 else 1))
+        df['Target'] = df['Pct_Change'].apply(lambda x: 2 if x > 0.0006 else (0 if x < -0.0006 else 1))
         df.dropna(inplace=True)
       # 📊 Show Target Class Distribution
         st.subheader("📊 Target Class Distribution")
