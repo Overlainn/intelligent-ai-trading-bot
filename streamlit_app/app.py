@@ -299,7 +299,7 @@ if mode == "Live":
         signal = 'Short'
         confidence = last['S0']
 
-    # ✅ Always log the latest row, whether it's a signal or not
+    # ✅ Always log the latest row
     st.session_state.signal_log.append({
         "Timestamp": last.name,
         "Price": round(last['Close'], 2),
@@ -348,22 +348,8 @@ if mode == "Live":
     # 📋 Signal Log Table
     st.subheader("📊 Signal Log")
 
-    # Initialize signal log if not present
-if "signal_log" not in st.session_state:
-    st.session_state.signal_log = []
-
-    # Alias for easier use
-    signal_log = st.session_state.signal_log
-
-    # --- [Optional] Add a dummy signal for testing ---
-    # signal_log.append({
-    #     "Timestamp": pd.Timestamp.utcnow(),
-    #     "Signal": "Long",
-    #     "Confidence": 0.87
-    # })
-
     # Convert to DataFrame
-    signal_df = pd.DataFrame(signal_log, columns=["Timestamp", "Signal", "Confidence"])
+    signal_df = pd.DataFrame(st.session_state.signal_log)
 
     # Ensure Timestamp is datetime
     signal_df['Timestamp'] = pd.to_datetime(signal_df['Timestamp'], errors='coerce')
@@ -377,15 +363,14 @@ if "signal_log" not in st.session_state:
 
     # Display the table
     st.dataframe(signal_df_sorted, use_container_width=True)
-    
+
     # 🔁 Force Retrain Button
-    with st.container():
-        st.markdown("---")
-        if st.button("🔁 Force Retrain", type="primary"):
-            with st.spinner("Retraining model..."):
-                model, scaler = train_model()
-                st.success("✅ Model retrained successfully.")
-                st.rerun()
+    st.markdown("---")
+    if st.button("🔁 Force Retrain", type="primary"):
+        with st.spinner("Retraining model..."):
+            model, scaler = train_model()
+            st.success("✅ Model retrained successfully.")
+            st.rerun()
 
 elif mode == "Backtest":
     df = get_data()
