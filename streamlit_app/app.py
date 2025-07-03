@@ -270,11 +270,24 @@ def train_model():
     X = df[features]
     y = df['Target']
 
+    # ✅ Missing Class Check
+    expected_classes = [0, 1, 2]
+    actual_classes = sorted(y.unique())
+    missing_classes = set(expected_classes) - set(actual_classes)
+
+    if missing_classes:
+        st.warning(f"⚠️ Missing classes in training data: {missing_classes}")
+        return None, None
+
     # Scaling & Training
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
-    model = RandomForestClassifier(n_estimators=50, random_state=42)
+    # ✅ Balanced class weights
+    class_weights = compute_class_weight('balanced', classes=np.array(expected_classes), y=y)
+    weight_dict = dict(zip(expected_classes, class_weights))
+
+    model = RandomForestClassifier(n_estimators=50, random_state=42, class_weight=weight_dict)
     model.fit(X_scaled, y)
 
     # Serialize Model + Scaler
