@@ -135,13 +135,7 @@ def fetch_paginated_ohlcv(symbol='BTC/USDT', timeframe='15m', days=90):
     df.set_index('Timestamp', inplace=True)
     return df
 
-def load_or_fetch_data():
-    if not os.path.exists(DATA_FILE):
-        if not download_from_drive(DATA_FILE):
-            df = fetch_paginated_ohlcv()
-            df.to_csv(DATA_FILE)
-            upload_to_drive(DATA_FILE)  # ✅ Only uploaded if freshly fetched
-            return df
+
 def load_or_fetch_data():
     if os.path.exists(DATA_FILE):
         df = pd.read_csv(DATA_FILE)
@@ -149,11 +143,25 @@ def load_or_fetch_data():
         # ✅ Ensure Timestamp column exists and is datetime
         if 'Timestamp' in df.columns:
             df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
-
+        else:
+            st.error("❌ 'Timestamp' column missing in local CSV.")
+            return pd.DataFrame()
         return df
-    else:
-        st.error(f"❌ Data file '{DATA_FILE}' not found.")
-        return pd.DataFrame()
+
+    # 🔁 If local file doesn't exist, try downloading or fetch fresh
+    if not download_from_drive(DATA_FILE):
+        df = fetch_paginated_ohlcv()
+        df.reset_index(inplace=True)  # Converts index back to Timestamp column
+        df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
+        df.to_csv(DATA_FILE, index=False)
+        upload_to_drive(DATA_FILE)
+        return df
+
+    # If it was downloaded successfully above
+    df = pd.read_csv(DATA_FILE)
+    if 'Timestamp' in df.columns:
+        df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
+    return df
 
 # ========== Push Notifications ==========
 push_user_key = st.secrets["pushover"]["user"]
