@@ -311,7 +311,7 @@ def load_scaler():
     return joblib.load(SCALER_FILE)
 
 # ✅ Load model/scaler at startup
-model, scaler = load_model_and_scaler()
+model, scaler = load_model_from_drive()
 
 # ========== Load or Retrain Model ==========
 RETRAIN_INTERVAL = timedelta(hours=12)
