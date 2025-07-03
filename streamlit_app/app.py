@@ -110,21 +110,6 @@ def download_from_drive(filename):
         f.write(fh.getvalue())
     return True
 
-def save_last_train_time():
-    try:
-        with open(LAST_TRAIN_FILE, 'w') as f:
-            f.write(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-        upload_to_drive(LAST_TRAIN_FILE)
-    except Exception as e:
-        st.error(f"❌ Failed to save last train time: {e}")
-
-def load_model_from_drive():
-    if not download_from_drive(MODEL_FILE):
-        st.error("❌ Failed to load model from Drive. Training new one.")
-        return train_model()
-    with open(MODEL_FILE, 'rb') as f:
-        return pickle.load(f)
-
 # ========== Historical Data Fetching ==========
 def fetch_paginated_ohlcv(symbol='BTC/USDT', timeframe='15m', days=90):
     exchange = ccxt.coinbase()
@@ -220,16 +205,15 @@ def train_model():
     df['Pct_Change'] = (df['Future_Close'] - df['Close']) / df['Close']
     df['Target'] = df['Pct_Change'].apply(lambda x: 2 if x > 0.003 else (0 if x < -0.003 else 1))
 
-    # Drop rows with NaNs
     df.dropna(inplace=True)
 
-    # Feature and Target Split
+    # Feature/Target split
     features = ['EMA9', 'EMA21', 'VWAP', 'RSI', 'MACD', 'MACD_Signal',
                 'ATR', 'ROC', 'OBV', 'EMA12_Cross_26', 'EMA9_Cross_21', 'Above_VWAP']
     X = df[features]
     y = df['Target']
 
-    # ✅ Missing Class Check
+    # ✅ Check class balance
     expected_classes = [0, 1, 2]
     actual_classes = sorted(y.unique())
     missing_classes = set(expected_classes) - set(actual_classes)
@@ -238,18 +222,16 @@ def train_model():
         st.warning(f"⚠️ Missing classes in training data: {missing_classes}")
         return None, None
 
-    # Scaling & Training
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
-    # ✅ Balanced class weights
     class_weights = compute_class_weight('balanced', classes=np.array(expected_classes), y=y)
     weight_dict = dict(zip(expected_classes, class_weights))
 
     model = RandomForestClassifier(n_estimators=50, random_state=42, class_weight=weight_dict)
     model.fit(X_scaled, y)
 
-    # Serialize Model + Scaler
+    # Save model to Drive
     model_bytes = pickle.dumps((model, scaler))
     upload_to_drive_stream(io.BytesIO(model_bytes), MODEL_FILE)
 
@@ -258,6 +240,22 @@ def train_model():
     upload_to_drive_content(LAST_TRAIN_FILE, timestamp)
 
     return model, scaler
+# ========== Utility Functions ==========
+
+def save_last_train_time():
+    try:
+        with open(LAST_TRAIN_FILE, 'w') as f:
+            f.write(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        upload_to_drive(LAST_TRAIN_FILE)
+    except Exception as e:
+        st.error(f"❌ Failed to save last train time: {e}")
+
+def load_model_from_drive():
+    if not download_from_drive(MODEL_FILE):
+        st.error("❌ Failed to load model from Drive. Training new one.")
+        return train_model()
+    with open(MODEL_FILE, 'rb') as f:
+        return pickle.load(f)
 
 # ========== Local Training Functions ==========
 def get_training_data():
