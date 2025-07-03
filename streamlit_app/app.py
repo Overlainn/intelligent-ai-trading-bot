@@ -75,8 +75,11 @@ def train_model():
     if missing_classes:
         st.warning(f"⚠️ Missing classes in training data: {missing_classes}")
 
-    class_weights = compute_class_weight('balanced', classes=np.array(actual_classes), y=df[target])
-    model = RandomForestClassifier(n_estimators=50, class_weight=dict(zip(actual_classes, class_weights)))
+    class_weights = compute_class_weight('balanced', classes=np.array(expected_classes), y=df[target])
+    model = RandomForestClassifier(
+        n_estimators=50,
+        class_weight=dict(zip(expected_classes, class_weights))
+    )
 
     scaler = StandardScaler()
     X = scaler.fit_transform(df[features])
