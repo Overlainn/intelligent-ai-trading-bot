@@ -512,13 +512,25 @@ if mode == "Live":
     fig.add_trace(go.Scatter(x=df.index, y=df['EMA21'], name='EMA21', line=dict(color='orange')))
     fig.add_trace(go.Scatter(x=df.index, y=df['VWAP'], name='VWAP', line=dict(color='red')))
 
-    if signal:
-        fig.add_trace(go.Scatter(
-            x=[last.name], y=[last['Close']],
-            mode='markers',
-            marker=dict(color='green' if signal == 'Long' else 'red', size=10),
-            name=signal
-        ))
+    # ✅ Plot historical Long/Short signals (S2 > 0.55 or S0 > 0.55)
+    long_signals = df[(df['Prediction'] == 2) & (df['S2'] > 0.55)]
+    short_signals = df[(df['Prediction'] == 0) & (df['S0'] > 0.55)]
+
+    fig.add_trace(go.Scatter(
+        x=long_signals.index,
+        y=long_signals['Close'],
+        mode='markers',
+        marker=dict(color='green', size=8),
+        name='Long Signal'
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=short_signals.index,
+        y=short_signals['Close'],
+        mode='markers',
+        marker=dict(color='red', size=8),
+        name='Short Signal'
+    ))
 
     fig.update_layout(
         title=f"📉 BTC Live — ${last['Close']:.2f}",
@@ -547,6 +559,7 @@ if mode == "Live":
             st.success("✅ Model retrained successfully.")
             st.rerun()
 
+# ========== Backtest Mode ==========
 elif mode == "Backtest":
     df = get_data()
 
@@ -555,18 +568,16 @@ elif mode == "Backtest":
     for use_itb in ["Pure", "ITB"]:
         trades = []
         in_position = None
-        entry_time = None
-        entry_price = None
-        entry_row = None
+        entry_time = entry_price = entry_row = None
 
         for i in range(1, len(df)):
             row = df.iloc[i]
+            passes_itb = row.get('ITB', True) if use_itb == "ITB" else True
 
-            # Entry logic
+            # === ENTRY LOGIC ===
             if in_position is None:
                 valid_long = row['Prediction'] == 2 and row['S2'] > 0.55
                 valid_short = row['Prediction'] == 0 and row['S0'] > 0.55
-                passes_itb = row['ITB'] if use_itb == "ITB" else True
 
                 if valid_long and passes_itb:
                     in_position = "LONG"
@@ -575,9 +586,10 @@ elif mode == "Backtest":
                     in_position = "SHORT"
                     entry_time, entry_price, entry_row = row.name, row['Close'], row
 
-            # Exit logic
+            # === EXIT LOGIC ===
             elif in_position == "LONG":
-                if row['Prediction'] == 0 and row['S0'] > 0.55:
+                valid_exit = row['Prediction'] == 0 and row['S0'] > 0.55
+                if valid_exit:
                     trades.append({
                         "Entry Time": entry_time,
                         "Exit Time": row.name,
@@ -592,7 +604,8 @@ elif mode == "Backtest":
                     in_position = None
 
             elif in_position == "SHORT":
-                if row['Prediction'] == 2 and row['S2'] > 0.55:
+                valid_exit = row['Prediction'] == 2 and row['S2'] > 0.55
+                if valid_exit:
                     trades.append({
                         "Entry Time": entry_time,
                         "Exit Time": row.name,
@@ -608,11 +621,11 @@ elif mode == "Backtest":
 
         results[use_itb] = trades
 
-    # 🔎 Convert to DataFrames
+    # ✅ Convert to DataFrames
     df_pure = pd.DataFrame(results["Pure"])
     df_itb = pd.DataFrame(results["ITB"])
 
-    # 📊 Display Results
+    # ✅ Display Results
     st.subheader("🧪 Backtest A: Pure Model")
     if not df_pure.empty:
         st.dataframe(df_pure.style.applymap(lambda v: 'color:green' if v > 0 else 'color:red', subset=["PNL (USD)", "Profit %"]))
@@ -627,28 +640,56 @@ elif mode == "Backtest":
     else:
         st.warning("No trades in ITB mode.")
 
-    # 📈 Plot Combined Trades
+    # ✅ Plot Combined Trades + Model Signals
     st.subheader("📈 Backtest Chart with All Trades")
-
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df.index, y=df['Close'], name='Price', line=dict(color='lightblue')))
 
-    for trade_df, mode, symbol in [(df_pure, "Pure", 'circle'), (df_itb, "ITB", 'diamond')]:
-        color_map = {'LONG': 'green', 'SHORT': 'red'}
+    color_map = {"LONG": "green", "SHORT": "red"}
+    for trade_df, label, marker_symbol in [(df_pure, "Pure", 'circle'), (df_itb, "ITB", 'diamond')]:
         for _, trade in trade_df.iterrows():
-            color = color_map.get(trade["Direction"], 'gray')
+            color = color_map.get(trade["Direction"], "gray")
             fig.add_trace(go.Scatter(
                 x=[trade["Entry Time"]], y=[trade["Entry Price"]],
                 mode='markers',
-                marker=dict(color=color, symbol=symbol, size=10),
-                name=f'{mode} {trade["Direction"]} Entry'
+                marker=dict(color=color, symbol=marker_symbol, size=10),
+                name=f"{label} {trade['Direction']} Entry"
             ))
             fig.add_trace(go.Scatter(
                 x=[trade["Exit Time"]], y=[trade["Exit Price"]],
                 mode='markers',
                 marker=dict(color=color, symbol='x', size=10),
-                name=f'{mode} {trade["Direction"]} Exit'
+                name=f"{label} {trade['Direction']} Exit"
             ))
 
-    fig.update_layout(height=600, title="Backtest Trade Entries and Exits", showlegend=True)
+    # ✅ Add Model Signal Markers
+    signal_longs = df[(df['Prediction'] == 2) & (df['S2'] > 0.55)]
+    signal_shorts = df[(df['Prediction'] == 0) & (df['S0'] > 0.55)]
+
+    fig.add_trace(go.Scatter(
+        x=signal_longs.index,
+        y=signal_longs['Close'],
+        mode='markers',
+        marker=dict(color='lime', size=6),
+        name='📈 Model Long Signal'
+    ))
+    fig.add_trace(go.Scatter(
+        x=signal_shorts.index,
+        y=signal_shorts['Close'],
+        mode='markers',
+        marker=dict(color='orangered', size=6),
+        name='📉 Model Short Signal'
+    ))
+
+    fig.update_layout(
+        height=600,
+        title="Backtest Trade Entries and Exits",
+        showlegend=True,
+        xaxis_title="Time",
+        yaxis_title="Price",
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        font=dict(color='white')
+    )
+
     st.plotly_chart(fig, use_container_width=True)
