@@ -142,7 +142,18 @@ def load_or_fetch_data():
             df.to_csv(DATA_FILE)
             upload_to_drive(DATA_FILE)  # ✅ Only uploaded if freshly fetched
             return df
-    return pd.read_csv(DATA_FILE, index_col='Timestamp', parse_dates=True)
+def load_or_fetch_data():
+    if os.path.exists(DATA_FILE):
+        df = pd.read_csv(DATA_FILE)
+
+        # ✅ Ensure Timestamp column exists and is datetime
+        if 'Timestamp' in df.columns:
+            df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
+
+        return df
+    else:
+        st.error(f"❌ Data file '{DATA_FILE}' not found.")
+        return pd.DataFrame()
 
 # ========== Push Notifications ==========
 push_user_key = st.secrets["pushover"]["user"]
