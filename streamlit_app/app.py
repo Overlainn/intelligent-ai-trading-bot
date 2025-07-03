@@ -468,9 +468,9 @@ if mode == "Live":
     # 📋 Signal Log Table
     st.subheader("📊 Signal Log")
     if not signal_df.empty and "Timestamp" in signal_df.columns:
-    st.dataframe(signal_df.sort_values(by="Timestamp", ascending=False), use_container_width=True)
+        st.dataframe(signal_df.sort_values(by="Timestamp", ascending=False), use_container_width=True)
     else:
-    st.info("No signals logged yet.")
+        st.info("No signals logged yet.")
 
     # 🔁 Force Retrain
     st.markdown("---")
