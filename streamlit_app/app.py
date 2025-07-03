@@ -268,7 +268,9 @@ def get_data():
 
 # ========== Live Mode ==========
 if mode == "Live":
-    # ✅ Initialize signal log in session state if needed
+    st.header("🟢 Live Mode")
+
+    # ✅ Initialize signal log
     if "signal_log" not in st.session_state:
         if download_from_drive("signal_log.csv"):
             try:
@@ -280,14 +282,21 @@ if mode == "Live":
         else:
             st.session_state.signal_log = []
 
-    # ✅ Get data and make predictions
+    # ✅ Load data and make predictions
     df = get_data()
-    df['Prediction'] = model.predict(scaler.transform(df[features]))
-    probs = model.predict_proba(scaler.transform(df[features]))
-    df['S0'] = probs[:, 0]
-    df['S1'] = probs[:, 1]
-    df['S2'] = probs[:, 2]
+    X = scaler.transform(df[features])
+    df['Prediction'] = model.predict(X)
 
+    # Predict probs and patch class alignment
+    raw_probs = model.predict_proba(X)
+    full_probs = np.zeros((raw_probs.shape[0], 3))  # 3 classes: 0=Short, 1=Neutral, 2=Long
+    for idx, cls in enumerate(model.classes_):
+        full_probs[:, cls] = raw_probs[:, idx]
+    df['S0'] = full_probs[:, 0]
+    df['S1'] = full_probs[:, 1]
+    df['S2'] = full_probs[:, 2]
+
+    # ✅ Analyze latest row
     last = df.iloc[-1]
     signal = None
     confidence = 0
@@ -299,7 +308,7 @@ if mode == "Live":
         signal = 'Short'
         confidence = last['S0']
 
-    # ✅ Always log the latest row
+    # ✅ Log signal (always log latest, but clean up old non-signal logs)
     st.session_state.signal_log.append({
         "Timestamp": last.name,
         "Price": round(last['Close'], 2),
@@ -310,10 +319,17 @@ if mode == "Live":
         "Confidence": round(confidence, 4)
     })
 
-    # ✅ Keep only last 100 entries
+    # ✅ Clean log: remove "None" signals older than 45 minutes
+    now = pd.Timestamp.utcnow()
+    st.session_state.signal_log = [
+        row for row in st.session_state.signal_log
+        if not (row['Signal'] == "None" and pd.to_datetime(row['Timestamp']) < now - pd.Timedelta(minutes=45))
+    ]
+
+    # ✅ Keep only last 100 rows
     st.session_state.signal_log = st.session_state.signal_log[-100:]
 
-    # ✅ Save to CSV and upload to Drive
+    # ✅ Save to Drive
     signal_df = pd.DataFrame(st.session_state.signal_log)
     csv_file = "signal_log.csv"
     signal_df.to_csv(csv_file, index=False)
@@ -345,24 +361,15 @@ if mode == "Live":
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # 📋 Signal Log Table
-    st.subheader("📊 Signal Log")
-
-    # Convert to DataFrame
-    signal_df = pd.DataFrame(st.session_state.signal_log)
-
-    # Ensure Timestamp is datetime
+    # 📋 Signal Log Table (filtered last 45m)
+    st.subheader("📊 Signal Log (Last 45m, only real signals)")
     signal_df['Timestamp'] = pd.to_datetime(signal_df['Timestamp'], errors='coerce')
-
-    # Remove signals older than 45 minutes
-    now = pd.Timestamp.utcnow()
-    signal_df = signal_df[signal_df['Timestamp'] >= now - pd.Timedelta(minutes=45)]
-
-    # Sort latest first
-    signal_df_sorted = signal_df.sort_values(by="Timestamp", ascending=False)
-
-    # Display the table
-    st.dataframe(signal_df_sorted, use_container_width=True)
+    filtered_df = signal_df[
+        (signal_df['Timestamp'] >= now - pd.Timedelta(minutes=45)) &
+        (signal_df['Signal'] != "None")
+    ]
+    filtered_df = filtered_df.sort_values(by="Timestamp", ascending=False)
+    st.dataframe(filtered_df, use_container_width=True)
 
     # 🔁 Force Retrain Button
     st.markdown("---")
