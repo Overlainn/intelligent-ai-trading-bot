@@ -56,42 +56,105 @@ def get_folder_id():
     folder = drive_service.files().create(body=file_metadata, fields='id').execute()
     return folder['id']
 
-def upload_to_drive(filename, drive_name=None):
+def upload_to_drive(filename):
     folder_id = get_folder_id()
-    file_name = drive_name or os.path.basename(filename)
-    media = MediaFileUpload(filename, resumable=True)
-    body = {'name': file_name, 'parents': [folder_id]}
 
-    existing = drive_service.files().list(
-        q=f"name='{file_name}' and '{folder_id}' in parents",
-        fields='files(id)'
-    ).execute().get('files', [])
+    # Load local file content
+    if not os.path.exists(filename):
+        st.error(f"⚠️ Local file '{filename}' not found for upload.")
+        return
 
-    if existing:
-        drive_service.files().delete(fileId=existing[0]['id']).execute()
-    drive_service.files().create(body=body, media_body=media).execute()
+    with open(filename, 'rb') as f:
+        local_content = f.read()
 
-def upload_to_drive_stream(file_stream, filename):
-    folder_id = get_folder_id()
-    media = MediaIoBaseUpload(file_stream, mimetype='application/octet-stream', resumable=True)
+    # Search for existing file on Drive
+    query = f"'{folder_id}' in parents and name='{filename}' and trashed=false"
+    response = drive_service.files().list(q=query).execute()
+    files = response.get('files', [])
+
+    # Check if the remote file exists and is identical
+    if files:
+        file_id = files[0]['id']
+
+        # Download remote file content to compare
+        request = drive_service.files().get_media(fileId=file_id)
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+
+        if fh.getvalue() == local_content:
+            # ✅ No change, skip upload
+            return
+
+        # ❌ Content differs, delete and re-upload
+        drive_service.files().delete(fileId=file_id).execute()
+
+    # ✅ Upload updated file
     file_metadata = {'name': filename, 'parents': [folder_id]}
-
-    existing = drive_service.files().list(
-        q=f"name='{filename}' and '{folder_id}' in parents",
-        fields='files(id)'
-    ).execute().get('files', [])
-
-    if existing:
-        try:
-            drive_service.files().delete(fileId=existing[0]['id']).execute()
-        except Exception as e:
-            print(f"⚠️ Warning: Couldn't delete existing file '{filename}': {e}")
+    media = MediaFileUpload(filename)
     drive_service.files().create(body=file_metadata, media_body=media).execute()
 
 def upload_to_drive_content(filename, content):
-    with open(filename, "w") as f:
-        f.write(content)
-    upload_to_drive(filename)
+    folder_id = get_folder_id()
+    local_buffer = content.encode()
+
+    # Search for existing file
+    query = f"'{folder_id}' in parents and name='{filename}' and trashed=false"
+    response = drive_service.files().list(q=query).execute()
+    files = response.get('files', [])
+
+    if files:
+        file_id = files[0]['id']
+
+        # Download current content
+        request = drive_service.files().get_media(fileId=file_id)
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+
+        if fh.getvalue() == local_buffer:
+            return
+
+        drive_service.files().delete(fileId=file_id).execute()
+
+    media = MediaIoBaseUpload(io.BytesIO(local_buffer), mimetype='text/plain')
+    file_metadata = {'name': filename, 'parents': [folder_id]}
+    drive_service.files().create(body=file_metadata, media_body=media).execute()
+
+def upload_to_drive_stream(file_stream, filename):
+    folder_id = get_folder_id()
+    file_stream.seek(0)
+    local_content = file_stream.read()
+
+    # Search for existing file
+    query = f"'{folder_id}' in parents and name='{filename}' and trashed=false"
+    response = drive_service.files().list(q=query).execute()
+    files = response.get('files', [])
+
+    if files:
+        file_id = files[0]['id']
+
+        # Download remote content
+        request = drive_service.files().get_media(fileId=file_id)
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+
+        if fh.getvalue() == local_content:
+            return
+
+        drive_service.files().delete(fileId=file_id).execute()
+
+    file_stream.seek(0)
+    media = MediaIoBaseUpload(file_stream, mimetype='application/octet-stream')
+    file_metadata = {'name': filename, 'parents': [folder_id]}
+    drive_service.files().create(body=file_metadata, media_body=media).execute()
 
 def download_from_drive(filename):
     # ✅ If file already exists locally, skip re-downloading
