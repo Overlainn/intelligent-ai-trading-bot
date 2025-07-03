@@ -455,17 +455,16 @@ if mode == "Live":
         signal = 'Short'
         confidence = last['S0']
 
-    # ✅ Log only valid signals
-    if signal:
-        st.session_state.signal_log.append({
-            "Timestamp": last.name,
-            "Price": round(last['Close'], 2),
-            "Signal": signal,
-            "Short": round(last['S0'], 4),
-            "Neutral": round(last['S1'], 4),
-            "Long": round(last['S2'], 4),
-            "Confidence": round(confidence, 4)
-        })
+    # ✅ Log every 15min prediction regardless of signal strength
+    st.session_state.signal_log.append({
+        "Timestamp": last.name,
+        "Price": round(last['Close'], 2),
+        "Signal": signal or "None",
+        "Short": round(last['S0'], 4),
+        "Neutral": round(last['S1'], 4),
+        "Long": round(last['S2'], 4),
+        "Confidence": round(confidence, 4)
+    })
 
     # ✅ Keep only last 100 & filter out non-signals older than 45 min
     now = pd.Timestamp.utcnow()
