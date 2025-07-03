@@ -157,8 +157,8 @@ def upload_to_drive_stream(file_stream, filename):
     drive_service.files().create(body=file_metadata, media_body=media).execute()
 
 def download_from_drive(filename):
-    # ✅ If file already exists locally, skip re-downloading
     if os.path.exists(filename):
+        print(f"📂 '{filename}' already exists locally. Skipping download.")
         return True
 
     folder_id = get_folder_id()
@@ -167,6 +167,7 @@ def download_from_drive(filename):
     files = response.get('files', [])
 
     if not files:
+        print(f"❌ '{filename}' not found on Drive.")
         return False
 
     file_id = files[0]['id']
@@ -181,6 +182,7 @@ def download_from_drive(filename):
     with open(filename, 'wb') as f:
         f.write(fh.getvalue())
 
+    print(f"✅ Downloaded '{filename}' from Drive.")
     return True
 
 # ========== Historical Data Fetching ==========
@@ -393,21 +395,24 @@ model, scaler = load_model_and_scaler()
 RETRAIN_INTERVAL = timedelta(hours=12)
 
 def should_retrain():
-    if not download_from_drive(LAST_TRAIN_FILE):
-        st.warning("📄 No last_train.txt found on Drive. Retraining.")
-        return True
+    if not os.path.exists(LAST_TRAIN_FILE):
+        st.warning("📄 'last_train.txt' not found locally. Attempting to download from Drive...")
+        if not download_from_drive(LAST_TRAIN_FILE):
+            st.warning("📄 'last_train.txt' not found on Drive. Retraining.")
+            return True
+
     try:
         with open(LAST_TRAIN_FILE, 'r') as f:
             last_train_str = f.read().strip()
         last_train_time = datetime.strptime(last_train_str, "%Y-%m-%d %H:%M:%S")
         if datetime.now() - last_train_time > RETRAIN_INTERVAL:
-            st.info("🕒 12 hours passed. Retraining model.")
+            st.info("🕒 Retraining required. More than 12 hours passed.")
             return True
         else:
-            st.success("✅ Model recently trained. Skipping retrain.")
+            st.success("✅ Recent training detected. Skipping retrain.")
             return False
     except Exception as e:
-        st.error(f"⚠️ Error reading last_train.txt: {e}")
+        st.error(f"⚠️ Error parsing 'last_train.txt': {e}")
         return True
 
 # Only automatic retrain or load from drive — no sidebar button
