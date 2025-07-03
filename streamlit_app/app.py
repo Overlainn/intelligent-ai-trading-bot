@@ -392,19 +392,40 @@ def get_training_data():
         if 'Timestamp' in df.columns:
             df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
 
-        # ✅ Save cleaned version
-        df.to_csv(DATA_FILE, index=False)
-
         # ✅ Feature Engineering
+        import ta
+        df['EMA9'] = ta.trend.ema_indicator(df['Close'], window=9)
+        df['EMA21'] = ta.trend.ema_indicator(df['Close'], window=21)
+        df['EMA12'] = ta.trend.ema_indicator(df['Close'], window=12)
+        df['EMA26'] = ta.trend.ema_indicator(df['Close'], window=26)
+        df['VWAP'] = ta.volume.volume_weighted_average_price(df['High'], df['Low'], df['Close'], df['Volume'])
+        df['RSI'] = ta.momentum.rsi(df['Close'], window=14)
+        macd = ta.trend.macd(df['Close'])
+        df['MACD'] = macd
+        df['MACD_Signal'] = ta.trend.macd_signal(df['Close'])
+        df['ATR'] = ta.volatility.average_true_range(df['High'], df['Low'], df['Close'], window=14)
+        df['ROC'] = ta.momentum.roc(df['Close'], window=12)
+        df['OBV'] = ta.volume.on_balance_volume(df['Close'], df['Volume'])
+
+        df['EMA12_Cross_26'] = (df['EMA12'] > df['EMA26']).astype(int)
+        df['EMA9_Cross_21'] = (df['EMA9'] > df['EMA21']).astype(int)
+        df['Above_VWAP'] = (df['Close'] > df['VWAP']).astype(int)
+
+        # ✅ Target column
         df['Future_Close'] = df['Close'].shift(-3)
         df['Pct_Change'] = (df['Future_Close'] - df['Close']) / df['Close']
         df['Target'] = df['Pct_Change'].apply(lambda x: 2 if x > 0.003 else (0 if x < -0.003 else 1))
+
         df.dropna(inplace=True)
+
+        # ✅ Save cleaned version
+        df.to_csv(DATA_FILE, index=False)
 
         return df
 
     st.error(f"❌ Training data '{DATA_FILE}' not found.")
     return pd.DataFrame()
+
 
 def train_model():
     df = get_training_data()
