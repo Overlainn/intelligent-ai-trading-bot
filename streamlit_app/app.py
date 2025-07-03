@@ -59,37 +59,6 @@ def get_training_data():
     st.error(f"❌ Training data '{DATA_FILE}' not found.")
     return pd.DataFrame()
 
-def train_model():
-    df = get_training_data()
-    features = ['Open', 'High', 'Low', 'Close', 'Volume']
-    target = 'Target'
-
-    if df.empty or not all(col in df.columns for col in features + [target]):
-        st.error("❌ Training data missing required fields.")
-        return None, None
-
-    expected_classes = [0, 1, 2]
-    actual_classes = sorted(df[target].unique())
-    missing_classes = set(expected_classes) - set(actual_classes)
-
-    # ✅ INSERT THIS BLOCK HERE:
-    if missing_classes:
-        st.warning(f"⚠️ Missing classes in training data: {missing_classes}")
-        return None, None
-
-    class_weights = compute_class_weight('balanced', classes=np.array(expected_classes), y=df[target])
-    model = RandomForestClassifier(n_estimators=50, class_weight=dict(zip(expected_classes, class_weights)))
-
-    scaler = StandardScaler()
-    X = scaler.fit_transform(df[features])
-    y = df[target]
-
-    model.fit(X, y)
-
-    joblib.dump(model, MODEL_FILE)
-    joblib.dump(scaler, SCALER_FILE)
-    return model, scaler
-
 def load_model_and_scaler():
     if os.path.exists(MODEL_FILE) and os.path.exists(SCALER_FILE):
         model = joblib.load(MODEL_FILE)
