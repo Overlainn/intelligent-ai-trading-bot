@@ -1,3 +1,4 @@
+# --- Your existing imports ---
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -31,6 +32,31 @@ from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload, MediaFi
 # Trading logic
 import ccxt
 from trading_engine.strategy import should_enter_trade
+
+# ✅ Model/scaler functions — ADD THIS HERE:
+import joblib
+
+def load_model():
+    return joblib.load("model.pkl")
+
+def load_scaler():
+    return joblib.load("scaler.pkl")
+
+def train_model():
+    df = get_training_data()  # ⛏️ Replace with your actual function
+    features = [...]  # ⛏️ Replace with actual feature column names
+    target = "Target"
+
+    scaler = StandardScaler()
+    X = scaler.fit_transform(df[features])
+    y = df[target]
+
+    model = RandomForestClassifier()
+    model.fit(X, y)
+
+    joblib.dump(model, "model.pkl")
+    joblib.dump(scaler, "scaler.pkl")
+    return model, scaler
 
 SCOPES = ['https://www.googleapis.com/auth/drive']
 SERVICE_ACCOUNT_INFO = st.secrets["google_service_account"]
