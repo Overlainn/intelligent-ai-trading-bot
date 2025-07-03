@@ -36,7 +36,7 @@ from trading_engine.strategy import should_enter_trade
 # ✅ Model/scaler functions — ADD THIS HERE:
 import joblib
 
-def ():
+def load_model_from_drive():
     return joblib.load("model.pkl")
 
 def load_scaler():
