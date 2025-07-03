@@ -334,10 +334,11 @@ def train_model():
 # ========== Utility Functions ==========
 
 def save_last_train_time():
+    timestamp = datetime.now().replace(microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
     try:
         with open(LAST_TRAIN_FILE, 'w') as f:
-            f.write(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-        upload_to_drive(LAST_TRAIN_FILE)
+            f.write(timestamp)
+        upload_to_drive_content(LAST_TRAIN_FILE, timestamp)
     except Exception as e:
         st.error(f"❌ Failed to save last train time: {e}")
 
@@ -374,19 +375,16 @@ def get_training_data():
     return pd.DataFrame()
 
 def load_model_and_scaler():
-    """
-    Loads the model and scaler from local files if available and valid.
-    If they are missing or unreadable, it triggers training from scratch.
-    """
-    if os.path.exists(MODEL_FILE) and os.path.exists(SCALER_FILE):
-        try:
+    if should_retrain():
+        return train_model()
+    else:
+        # Load locally or from drive
+        if os.path.exists(MODEL_FILE) and os.path.exists(SCALER_FILE):
             model = joblib.load(MODEL_FILE)
             scaler = joblib.load(SCALER_FILE)
             return model, scaler
-        except Exception as e:
-            st.warning(f"⚠️ Error loading local model/scaler: {e}")
-            st.info("🔁 Re-training model due to load error.")
-    return train_model()
+        else:
+            return train_model()
 
 def load_model_from_drive():
     if not download_from_drive(MODEL_FILE):
