@@ -1,13 +1,9 @@
 # --- Your existing imports ---
-import sys
-import os
+import sys, os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Core libraries
-import time
-import io
-import pickle
-import requests
+import time, io, pickle, requests
 from datetime import datetime, date, timedelta
 
 # Data and ML
@@ -33,40 +29,56 @@ from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload, MediaFi
 import ccxt
 from trading_engine.strategy import should_enter_trade
 
-# ✅ Model/scaler functions — ADD THIS HERE:
+# ✅ Model/scaler + Training + Auto‑load logic
 import joblib
 
-def load_model_from_drive():
-    return joblib.load("model.pkl")
-
-def load_scaler():
-    return joblib.load("scaler.pkl")
-
-def train_model():
-    df = get_training_data()  # ⛏️ Replace with your actual function
-    features = [...]  # ⛏️ Replace with actual feature column names
-    target = "Target"
-
-    scaler = StandardScaler()
-    X = scaler.fit_transform(df[features])
-    y = df[target]
-
-    model = RandomForestClassifier()
-    model.fit(X, y)
-
-    joblib.dump(model, "model.pkl")
-    joblib.dump(scaler, "scaler.pkl")
-    return model, scaler
+MODEL_FILE = "model.pkl"
+SCALER_FILE = "scaler.pkl"
+DATA_FILE = "btc_data.csv"
+FOLDER_NAME = "StreamlitITB"
 
 SCOPES = ['https://www.googleapis.com/auth/drive']
 SERVICE_ACCOUNT_INFO = st.secrets["google_service_account"]
 creds = service_account.Credentials.from_service_account_info(SERVICE_ACCOUNT_INFO, scopes=SCOPES)
 drive_service = build('drive', 'v3', credentials=creds)
 
-MODEL_FILE = "btc_model.pkl"
-LAST_TRAIN_FILE = "last_train.txt"
-DATA_FILE = "btc_data.csv"
-FOLDER_NAME = "StreamlitITB"
+# ========== Local Training Functions ==========
+def get_training_data():
+    if os.path.exists(DATA_FILE):
+        df = pd.read_csv(DATA_FILE)
+        return df.dropna()
+    st.error(f"❌ Training data '{DATA_FILE}' not found.")
+    return pd.DataFrame()
+
+def train_model():
+    df = get_training_data()
+    features = ['Open', 'High', 'Low', 'Close', 'Volume']  # Replace with your features
+    target = 'Target'  # Replace with your target column
+
+    if df.empty or not all(col in df.columns for col in features + [target]):
+        st.error("❌ Training data missing required fields.")
+        return None, None
+
+    scaler = StandardScaler()
+    X = scaler.fit_transform(df[features])
+    y = df[target]
+
+    model = RandomForestClassifier(n_estimators=50)
+    model.fit(X, y)
+
+    joblib.dump(model, MODEL_FILE)
+    joblib.dump(scaler, SCALER_FILE)
+    return model, scaler
+
+def load_model_and_scaler():
+    if os.path.exists(MODEL_FILE) and os.path.exists(SCALER_FILE):
+        model = joblib.load(MODEL_FILE)
+        scaler = joblib.load(SCALER_FILE)
+        return model, scaler
+    return train_model()
+
+# ✅ Load model/scaler at startup
+model, scaler = load_model_and_scaler()
 
 # ========== Google Drive Functions ==========
 def get_folder_id():
@@ -79,14 +91,31 @@ def get_folder_id():
     folder = drive_service.files().create(body=file_metadata, fields='id').execute()
     return folder['id']
 
+def upload_to_drive(filename, drive_name=None):
+    folder_id = get_folder_id()
+    file_name = drive_name or os.path.basename(filename)
+    media = MediaFileUpload(filename, resumable=True)
+    body = {'name': file_name, 'parents': [folder_id]}
+
+    existing = drive_service.files().list(
+        q=f"name='{file_name}' and '{folder_id}' in parents",
+        fields='files(id)'
+    ).execute().get('files', [])
+
+    if existing:
+        drive_service.files().delete(fileId=existing[0]['id']).execute()
+    drive_service.files().create(body=body, media_body=media).execute()
+
 def upload_to_drive_stream(file_stream, filename):
     folder_id = get_folder_id()
     media = MediaIoBaseUpload(file_stream, mimetype='application/octet-stream', resumable=True)
     file_metadata = {'name': filename, 'parents': [folder_id]}
+
     existing = drive_service.files().list(
         q=f"name='{filename}' and '{folder_id}' in parents",
         fields='files(id)'
     ).execute().get('files', [])
+
     if existing:
         try:
             drive_service.files().delete(fileId=existing[0]['id']).execute()
@@ -98,21 +127,6 @@ def upload_to_drive_content(filename, content):
     with open("last_train.txt", "w") as f:
         f.write(content)
     upload_to_drive("last_train.txt")
-
-def upload_to_drive(filename):
-    folder_id = get_folder_id()
-    media = MediaFileUpload(filename, resumable=True)
-    file_metadata = {'name': filename, 'parents': [folder_id]}
-    existing = drive_service.files().list(
-        q=f"name='{filename}' and '{folder_id}' in parents",
-        fields='files(id)'
-    ).execute().get('files', [])
-    if existing:
-        try:
-            drive_service.files().delete(fileId=existing[0]['id']).execute()
-        except Exception as e:
-            print(f"⚠️ Warning: Couldn't delete existing file '{filename}': {e}")
-    drive_service.files().create(body=file_metadata, media_body=media).execute()
 
 def download_from_drive(filename):
     folder_id = get_folder_id()
