@@ -94,30 +94,31 @@ def upload_to_drive_content(filename, content):
     upload_to_drive(filename)
 
 def download_from_drive(filename):
-    try:
-        folder_id = get_folder_id()
-        query = f"'{folder_id}' in parents and name = '{filename}' and trashed = false"
-        results = drive_service.files().list(q=query, fields="files(id, name)").execute()
-        items = results.get('files', [])
-
-        if not items:
-            st.warning(f"📁 File '{filename}' not found in Drive folder '{FOLDER_NAME}'.")
-            return False
-
-        file_id = items[0]['id']
-        request = drive_service.files().get_media(fileId=file_id)
-        fh = io.FileIO(filename, 'wb')
-        downloader = MediaIoBaseDownload(fh, request)
-        done = False
-        while not done:
-            _, done = downloader.next_chunk()
-
-        st.success(f"✅ Downloaded '{filename}' from Drive.")
+    # ✅ If file already exists locally, skip re-downloading
+    if os.path.exists(filename):
         return True
 
-    except Exception as e:
-        st.error(f"❌ Error downloading {filename}: {e}")
+    folder_id = get_folder_id()
+    query = f"'{folder_id}' in parents and name='{filename}' and trashed=false"
+    response = drive_service.files().list(q=query).execute()
+    files = response.get('files', [])
+
+    if not files:
         return False
+
+    file_id = files[0]['id']
+    request = drive_service.files().get_media(fileId=file_id)
+    fh = io.BytesIO()
+    downloader = MediaIoBaseDownload(fh, request)
+
+    done = False
+    while not done:
+        status, done = downloader.next_chunk()
+
+    with open(filename, 'wb') as f:
+        f.write(fh.getvalue())
+
+    return True
 
 # ========== Historical Data Fetching ==========
 def fetch_paginated_ohlcv(symbol='BTC/USDT', timeframe='15m', days=90):
