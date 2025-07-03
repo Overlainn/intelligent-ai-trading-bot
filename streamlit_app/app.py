@@ -68,14 +68,14 @@ def train_model():
         st.error("❌ Training data missing required fields.")
         return None, None
 
-    # Check for missing classes
     expected_classes = [0, 1, 2]
     actual_classes = set(df[target].unique())
     missing_classes = set(expected_classes) - actual_classes
     if missing_classes:
         st.warning(f"⚠️ Missing classes in training data: {missing_classes}")
 
-    class_weights = compute_class_weight('balanced', classes=expected_classes, y=df[target])
+    # ✅ Convert to NumPy array
+    class_weights = compute_class_weight('balanced', classes=np.array(expected_classes), y=df[target])
     model = RandomForestClassifier(n_estimators=50, class_weight=dict(zip(expected_classes, class_weights)))
 
     scaler = StandardScaler()
