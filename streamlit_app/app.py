@@ -446,11 +446,33 @@ def load_model_and_scaler():
             return train_model()
 
 def load_model_from_drive():
+    model = None
+    scaler = None
+
     if not download_from_drive(MODEL_FILE):
-        st.error("❌ Failed to load model from Drive. Training new one.")
-        return train_model()
-    with open(MODEL_FILE, 'rb') as f:
-        return pickle.load(f)
+        st.error("❌ Failed to load model from Drive.")
+    else:
+        try:
+            model = joblib.load(MODEL_FILE)
+        except Exception as e:
+            st.error(f"❌ Error loading model: {e}")
+            model = None
+
+    if not download_from_drive(SCALER_FILE):
+        st.error("❌ Failed to load scaler from Drive.")
+    else:
+        try:
+            scaler = joblib.load(SCALER_FILE)
+        except Exception as e:
+            st.error(f"❌ Error loading scaler: {e}")
+            scaler = None
+
+    # Retrain if either is missing
+    if model is None or scaler is None:
+        st.warning("⚠️ Model or scaler missing. Retraining...")
+        model, scaler = train_model()
+
+    return model, scaler
 
 def load_scaler():
     if not download_from_drive(SCALER_FILE):
