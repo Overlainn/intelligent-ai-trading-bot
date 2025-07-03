@@ -94,21 +94,30 @@ def upload_to_drive_content(filename, content):
     upload_to_drive(filename)
 
 def download_from_drive(filename):
-    folder_id = get_folder_id()
-    results = drive_service.files().list(q=f"name='{filename}' and '{folder_id}' in parents", fields="files(id)").execute()
-    files = results.get('files', [])
-    if not files:
+    try:
+        folder_id = get_folder_id(FOLDER_NAME)
+        query = f"'{folder_id}' in parents and name = '{filename}' and trashed = false"
+        results = drive_service.files().list(q=query, fields="files(id, name)").execute()
+        items = results.get('files', [])
+
+        if not items:
+            st.warning(f"📁 File '{filename}' not found in Drive folder '{FOLDER_NAME}'.")
+            return False
+
+        file_id = items[0]['id']
+        request = drive_service.files().get_media(fileId=file_id)
+        fh = io.FileIO(filename, 'wb')
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+
+        st.success(f"✅ Downloaded '{filename}' from Drive.")
+        return True
+
+    except Exception as e:
+        st.error(f"❌ Error downloading {filename}: {e}")
         return False
-    file_id = files[0]['id']
-    request = drive_service.files().get_media(fileId=file_id)
-    fh = io.BytesIO()
-    downloader = MediaIoBaseDownload(fh, request)
-    done = False
-    while not done:
-        _, done = downloader.next_chunk()
-    with open(filename, 'wb') as f:
-        f.write(fh.getvalue())
-    return True
 
 # ========== Historical Data Fetching ==========
 def fetch_paginated_ohlcv(symbol='BTC/USDT', timeframe='15m', days=90):
@@ -253,8 +262,8 @@ def save_last_train_time():
 
 def load_model_from_drive():
     if not download_from_drive(MODEL_FILE):
-        st.error("❌ Failed to load model from Drive. Training new one.")
-        return train_model()
+        st.error("❌ Failed to load model from Drive.")
+        return None, None
     with open(MODEL_FILE, 'rb') as f:
         return pickle.load(f)
 
