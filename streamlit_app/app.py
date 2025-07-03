@@ -10,7 +10,7 @@ from datetime import datetime, date, timedelta
 import pandas as pd
 import numpy as np
 import ta
-from sklearn.ensemble import RandomForestClassifier
+from xgboost import XGBClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.utils.class_weight import compute_class_weight
 
@@ -208,8 +208,7 @@ def train_model():
     df.dropna(inplace=True)
 
     # Feature/Target split
-    features = ['EMA9', 'EMA21', 'VWAP', 'RSI', 'MACD', 'MACD_Signal',
-                'ATR', 'ROC', 'OBV', 'EMA12_Cross_26', 'EMA9_Cross_21', 'Above_VWAP']
+    features = ['EMA9', 'EMA21', 'VWAP', 'RSI', 'MACD', 'ATR', 'ROC', 'OBV', 'EMA9_Cross_21', 'Above_VWAP']
     X = df[features]
     y = df['Target']
 
@@ -228,8 +227,17 @@ def train_model():
     class_weights = compute_class_weight('balanced', classes=np.array(expected_classes), y=y)
     weight_dict = dict(zip(expected_classes, class_weights))
 
-    model = RandomForestClassifier(n_estimators=50, random_state=42, class_weight=weight_dict)
-    model.fit(X_scaled, y)
+    model = XGBClassifier(
+    n_estimators=150,
+    learning_rate=0.05,
+    max_depth=5,
+    subsample=0.8,
+    colsample_bytree=0.8,
+    use_label_encoder=False,
+    eval_metric='mlogloss',
+    random_state=42
+)
+model.fit(X_scaled, y)
 
     # Save model to Drive
     model_bytes = pickle.dumps((model, scaler))
@@ -341,8 +349,7 @@ if should_retrain():
 else:
     model, scaler = load_model_from_drive()
 
-features = ['EMA9', 'EMA21', 'VWAP', 'RSI', 'MACD', 'MACD_Signal', 'ATR', 'ROC', 'OBV',
-            'EMA12_Cross_26', 'EMA9_Cross_21', 'Above_VWAP']
+features = ['EMA9', 'EMA21', 'VWAP', 'RSI', 'MACD', 'ATR', 'ROC', 'OBV', 'EMA9_Cross_21', 'Above_VWAP']
 
 # ========== UI ==========
 st.set_page_config(layout='wide')
@@ -377,8 +384,7 @@ def get_data():
     df['EMA9_Cross_21'] = (df['EMA9'] > df['EMA21']).astype(int)
     df['Above_VWAP'] = (df['Close'] > df['VWAP']).astype(int)
 
-    features = ['EMA9', 'EMA21', 'VWAP', 'RSI', 'MACD', 'MACD_Signal', 'ATR', 'ROC', 'OBV',
-                'EMA12_Cross_26', 'EMA9_Cross_21', 'Above_VWAP']
+    features = ['EMA9', 'EMA21', 'VWAP', 'RSI', 'MACD', 'ATR', 'ROC', 'OBV', 'EMA9_Cross_21', 'Above_VWAP']
 
     df.dropna(inplace=True)
     X = df[features]
@@ -428,8 +434,7 @@ if mode == "Live":
 
     # ✅ Load latest live data
     df = get_data()
-    features = ['EMA9', 'EMA21', 'VWAP', 'RSI', 'MACD', 'MACD_Signal',
-            'ATR', 'ROC', 'OBV', 'EMA12_Cross_26', 'EMA9_Cross_21', 'Above_VWAP']
+    features = ['EMA9', 'EMA21', 'VWAP', 'RSI', 'MACD', 'ATR', 'ROC', 'OBV', 'EMA9_Cross_21', 'Above_VWAP']
     X = scaler.transform(df[features])
     raw_probs = model.predict_proba(X)
 
