@@ -35,6 +35,7 @@ import joblib
 MODEL_FILE = "model.pkl"
 SCALER_FILE = "scaler.pkl"
 DATA_FILE = "btc_data.csv"
+LAST_TRAIN_FILE = "last_train.txt"
 FOLDER_NAME = "StreamlitITB"
 
 SCOPES = ['https://www.googleapis.com/auth/drive']
@@ -124,9 +125,9 @@ def upload_to_drive_stream(file_stream, filename):
     drive_service.files().create(body=file_metadata, media_body=media).execute()
 
 def upload_to_drive_content(filename, content):
-    with open("last_train.txt", "w") as f:
+    with open(filename, "w") as f:
         f.write(content)
-    upload_to_drive("last_train.txt")
+    upload_to_drive(filename)
 
 def download_from_drive(filename):
     folder_id = get_folder_id()
