@@ -216,7 +216,9 @@ def train_model():
     y = df['Target']
 
     # ✅ Check class balance
-    expected_classes = [0, 1, 2]
+    class_counts = y.value_counts(normalize=True)
+    st.write("📊 Target class distribution:", class_counts)
+
     actual_classes = sorted(y.unique())
     missing_classes = set(expected_classes) - set(actual_classes)
 
