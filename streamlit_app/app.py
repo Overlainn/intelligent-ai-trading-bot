@@ -348,20 +348,34 @@ if mode == "Live":
     # 📋 Signal Log Table
     st.subheader("📊 Signal Log")
 
+    # Initialize signal log if not present
+    if "signal_log" not in st.session_state:
+    st.session_state.signal_log = []
+
+    # Alias for easier use
+    signal_log = st.session_state.signal_log
+
+    # --- [Optional] Add a dummy signal for testing ---
+    # signal_log.append({
+    #     "Timestamp": pd.Timestamp.utcnow(),
+    #     "Signal": "Long",
+    #     "Confidence": 0.87
+    # })
+
     # Convert to DataFrame
     signal_df = pd.DataFrame(signal_log, columns=["Timestamp", "Signal", "Confidence"])
 
-    # Convert Timestamp to datetime if not already
+    # Ensure Timestamp is datetime
     signal_df['Timestamp'] = pd.to_datetime(signal_df['Timestamp'], errors='coerce')
 
-    # Filter out signals older than 45 minutes
-    now = pd.Timestamp.utcnow()  # Or use pd.Timestamp.now(tz='UTC') if timezones matter
+    # Remove signals older than 45 minutes
+    now = pd.Timestamp.utcnow()
     signal_df = signal_df[signal_df['Timestamp'] >= now - pd.Timedelta(minutes=45)]
 
-    # Sort by latest first
+    # Sort latest first
     signal_df_sorted = signal_df.sort_values(by="Timestamp", ascending=False)
-    
-    # Display
+
+    # Display the table
     st.dataframe(signal_df_sorted, use_container_width=True)
     
     # 🔁 Force Retrain Button
