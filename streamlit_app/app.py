@@ -11,6 +11,9 @@ import pandas as pd
 import numpy as np
 import ta
 from xgboost import XGBClassifier
+
+SHARED_FEATURES = ['EMA9', 'EMA21', 'VWAP', 'RSI', 'MACD', 'MACD_Signal',
+                   'ATR', 'ROC', 'OBV', 'EMA12_Cross_26', 'EMA9_Cross_21', 'Above_VWAP']
 from sklearn.preprocessing import StandardScaler
 from sklearn.utils.class_weight import compute_class_weight
 
@@ -208,7 +211,7 @@ def train_model():
     df.dropna(inplace=True)
 
     # Feature/Target split
-    features = ['EMA9', 'EMA21', 'VWAP', 'RSI', 'MACD', 'ATR', 'ROC', 'OBV', 'EMA9_Cross_21', 'Above_VWAP']
+    features = SHARED_FEATURES
     X = df[features]
     y = df['Target']
 
@@ -350,7 +353,7 @@ if should_retrain():
 else:
     model, scaler = load_model_from_drive()
 
-features = ['EMA9', 'EMA21', 'VWAP', 'RSI', 'MACD', 'ATR', 'ROC', 'OBV', 'EMA9_Cross_21', 'Above_VWAP']
+features = SHARED_FEATURES
 
 # ========== UI ==========
 st.set_page_config(layout='wide')
@@ -385,7 +388,7 @@ def get_data():
     df['EMA9_Cross_21'] = (df['EMA9'] > df['EMA21']).astype(int)
     df['Above_VWAP'] = (df['Close'] > df['VWAP']).astype(int)
 
-    features = ['EMA9', 'EMA21', 'VWAP', 'RSI', 'MACD', 'ATR', 'ROC', 'OBV', 'EMA9_Cross_21', 'Above_VWAP']
+    features = SHARED_FEATURES
 
     df.dropna(inplace=True)
     X = df[features]
@@ -435,8 +438,7 @@ if mode == "Live":
 
     # ✅ Load latest live data
     df = get_data()
-    features = ['EMA9', 'EMA21', 'VWAP', 'RSI', 'MACD', 'MACD_Signal',
-            'ATR', 'ROC', 'OBV', 'EMA12_Cross_26', 'EMA9_Cross_21', 'Above_VWAP']
+    features = SHARED_FEATURES
     X = scaler.transform(df[features])
     raw_probs = model.predict_proba(X)
 
