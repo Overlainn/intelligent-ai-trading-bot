@@ -2,14 +2,34 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-import ccxt, pandas as pd, ta, time, streamlit as st, plotly.graph_objs as go
+# Core libraries
+import time
+import io
+import pickle
+import requests
+from datetime import datetime, date, timedelta
+
+# Data and ML
+import pandas as pd
+import numpy as np
+import ta
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
-import pytz, requests, pickle, io
-from datetime import datetime, date, timedelta
+
+# Visualization
+import plotly.graph_objs as go
+
+# Web app and timezone
+import streamlit as st
+import pytz
+
+# Google Drive
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload, MediaFileUpload
+
+# Trading logic
+import ccxt
 from trading_engine.strategy import should_enter_trade
 
 SCOPES = ['https://www.googleapis.com/auth/drive']
