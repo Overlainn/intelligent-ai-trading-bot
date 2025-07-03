@@ -110,6 +110,14 @@ def download_from_drive(filename):
         f.write(fh.getvalue())
     return True
 
+def save_last_train_time():
+    try:
+        with open(LAST_TRAIN_FILE, 'w') as f:
+            f.write(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        upload_to_drive(LAST_TRAIN_FILE)
+    except Exception as e:
+        st.error(f"❌ Failed to save last train time: {e}")
+
 def load_model_from_drive():
     if not download_from_drive(MODEL_FILE):
         st.error("❌ Failed to load model from Drive. Training new one.")
