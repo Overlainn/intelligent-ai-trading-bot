@@ -270,7 +270,7 @@ def get_data():
 if mode == "Live":
     st.header("🟢 Live Mode")
 
-    # ✅ Initialize signal log
+    # ✅ Initialize signal log in session state if needed
     if "signal_log" not in st.session_state:
         if download_from_drive("signal_log.csv"):
             try:
@@ -282,21 +282,24 @@ if mode == "Live":
         else:
             st.session_state.signal_log = []
 
-    # ✅ Load data and make predictions
+    # ✅ Load data and make prediction
     df = get_data()
     X = scaler.transform(df[features])
-    df['Prediction'] = model.predict(X)
-
-    # Predict probs and patch class alignment
     raw_probs = model.predict_proba(X)
-    full_probs = np.zeros((raw_probs.shape[0], 3))  # 3 classes: 0=Short, 1=Neutral, 2=Long
+    raw_probs = np.asarray(raw_probs)
+
+    # Ensure 3 classes (Short, Neutral, Long)
+    full_probs = np.zeros((raw_probs.shape[0], 3))
     for idx, cls in enumerate(model.classes_):
         full_probs[:, cls] = raw_probs[:, idx]
+
+    # Add prediction columns
+    df['Prediction'] = model.predict(X)
     df['S0'] = full_probs[:, 0]
     df['S1'] = full_probs[:, 1]
     df['S2'] = full_probs[:, 2]
 
-    # ✅ Analyze latest row
+    # ✅ Extract last row
     last = df.iloc[-1]
     signal = None
     confidence = 0
@@ -308,34 +311,32 @@ if mode == "Live":
         signal = 'Short'
         confidence = last['S0']
 
-    # ✅ Log signal (always log latest, but clean up old non-signal logs)
-    st.session_state.signal_log.append({
-        "Timestamp": last.name,
-        "Price": round(last['Close'], 2),
-        "Signal": signal if signal else "None",
-        "Short": round(last['S0'], 4),
-        "Neutral": round(last['S1'], 4),
-        "Long": round(last['S2'], 4),
-        "Confidence": round(confidence, 4)
-    })
+    # ✅ Log only actual signals
+    if signal:
+        st.session_state.signal_log.append({
+            "Timestamp": last.name,
+            "Price": round(last['Close'], 2),
+            "Signal": signal,
+            "Short": round(last['S0'], 4),
+            "Neutral": round(last['S1'], 4),
+            "Long": round(last['S2'], 4),
+            "Confidence": round(confidence, 4)
+        })
 
-    # ✅ Clean log: remove "None" signals older than 45 minutes
+    # ✅ Keep only last 100 entries AND filter out non-signals older than 45 minutes
     now = pd.Timestamp.utcnow()
     st.session_state.signal_log = [
-        row for row in st.session_state.signal_log
-        if not (row['Signal'] == "None" and pd.to_datetime(row['Timestamp']) < now - pd.Timedelta(minutes=45))
-    ]
+        entry for entry in st.session_state.signal_log
+        if (entry["Signal"] != "None" and pd.to_datetime(entry["Timestamp"], errors="coerce") >= now - pd.Timedelta(minutes=45))
+    ][-100:]
 
-    # ✅ Keep only last 100 rows
-    st.session_state.signal_log = st.session_state.signal_log[-100:]
-
-    # ✅ Save to Drive
+    # ✅ Save to CSV and upload
     signal_df = pd.DataFrame(st.session_state.signal_log)
     csv_file = "signal_log.csv"
     signal_df.to_csv(csv_file, index=False)
     upload_to_drive(csv_file)
 
-    # 📈 Chart
+    # 📈 Plot
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df.index, y=df['Close'], name='Price', line=dict(color='lightblue')))
     fig.add_trace(go.Scatter(x=df.index, y=df['EMA9'], name='EMA9', line=dict(color='blue')))
@@ -361,17 +362,11 @@ if mode == "Live":
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # 📋 Signal Log Table (filtered last 45m)
-    st.subheader("📊 Signal Log (Last 45m, only real signals)")
-    signal_df['Timestamp'] = pd.to_datetime(signal_df['Timestamp'], errors='coerce')
-    filtered_df = signal_df[
-        (signal_df['Timestamp'] >= now - pd.Timedelta(minutes=45)) &
-        (signal_df['Signal'] != "None")
-    ]
-    filtered_df = filtered_df.sort_values(by="Timestamp", ascending=False)
-    st.dataframe(filtered_df, use_container_width=True)
+    # 📋 Signal Log Table
+    st.subheader("📊 Signal Log")
+    st.dataframe(signal_df.sort_values(by="Timestamp", ascending=False), use_container_width=True)
 
-    # 🔁 Force Retrain Button
+    # 🔁 Force Retrain
     st.markdown("---")
     if st.button("🔁 Force Retrain", type="primary"):
         with st.spinner("Retraining model..."):
