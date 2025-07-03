@@ -22,6 +22,7 @@ import streamlit as st
 import pytz
 
 # Google Drive
+import hashlib
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload, MediaFileUpload
@@ -56,58 +57,141 @@ def get_folder_id():
     folder = drive_service.files().create(body=file_metadata, fields='id').execute()
     return folder['id']
 
-def upload_to_drive(filename, drive_name=None):
+def upload_to_drive(filename):
     folder_id = get_folder_id()
-    file_name = drive_name or os.path.basename(filename)
-    media = MediaFileUpload(filename, resumable=True)
-    body = {'name': file_name, 'parents': [folder_id]}
 
-    existing = drive_service.files().list(
-        q=f"name='{file_name}' and '{folder_id}' in parents",
-        fields='files(id)'
-    ).execute().get('files', [])
+    # Load local file content
+    if not os.path.exists(filename):
+        st.error(f"⚠️ Local file '{filename}' not found for upload.")
+        return
 
-    if existing:
-        drive_service.files().delete(fileId=existing[0]['id']).execute()
-    drive_service.files().create(body=body, media_body=media).execute()
+    with open(filename, 'rb') as f:
+        local_content = f.read()
 
-def upload_to_drive_stream(file_stream, filename):
-    folder_id = get_folder_id()
-    media = MediaIoBaseUpload(file_stream, mimetype='application/octet-stream', resumable=True)
+    # Search for existing file on Drive
+    query = f"'{folder_id}' in parents and name='{filename}' and trashed=false"
+    response = drive_service.files().list(q=query).execute()
+    files = response.get('files', [])
+
+    # Check if the remote file exists and is identical
+    if files:
+        file_id = files[0]['id']
+
+        # Download remote file content to compare
+        request = drive_service.files().get_media(fileId=file_id)
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+
+        # ✅ Use hash comparison
+        remote_hash = hashlib.sha256(fh.getvalue()).hexdigest()
+        local_hash = hashlib.sha256(local_content).hexdigest()
+        if remote_hash == local_hash:
+            return
+
+        # ❌ Content differs, delete and re-upload
+        drive_service.files().delete(fileId=file_id).execute()
+
+    # ✅ Upload updated file
     file_metadata = {'name': filename, 'parents': [folder_id]}
-
-    existing = drive_service.files().list(
-        q=f"name='{filename}' and '{folder_id}' in parents",
-        fields='files(id)'
-    ).execute().get('files', [])
-
-    if existing:
-        try:
-            drive_service.files().delete(fileId=existing[0]['id']).execute()
-        except Exception as e:
-            print(f"⚠️ Warning: Couldn't delete existing file '{filename}': {e}")
+    media = MediaFileUpload(filename)
     drive_service.files().create(body=file_metadata, media_body=media).execute()
 
 def upload_to_drive_content(filename, content):
-    with open(filename, "w") as f:
-        f.write(content)
-    upload_to_drive(filename)
+    folder_id = get_folder_id()
+    local_buffer = content.encode()
+
+    # Search for existing file
+    query = f"'{folder_id}' in parents and name='{filename}' and trashed=false"
+    response = drive_service.files().list(q=query).execute()
+    files = response.get('files', [])
+
+    if files:
+        file_id = files[0]['id']
+
+        # Download current content
+        request = drive_service.files().get_media(fileId=file_id)
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+
+        # ✅ Use hash comparison
+        remote_hash = hashlib.sha256(fh.getvalue()).hexdigest()
+        local_hash = hashlib.sha256(local_buffer).hexdigest()
+        if remote_hash == local_hash:
+            return
+
+        drive_service.files().delete(fileId=file_id).execute()
+
+    media = MediaIoBaseUpload(io.BytesIO(local_buffer), mimetype='text/plain')
+    file_metadata = {'name': filename, 'parents': [folder_id]}
+    drive_service.files().create(body=file_metadata, media_body=media).execute()
+
+def upload_to_drive_stream(file_stream, filename):
+    folder_id = get_folder_id()
+    file_stream.seek(0)
+    local_content = file_stream.read()
+
+    # Search for existing file
+    query = f"'{folder_id}' in parents and name='{filename}' and trashed=false"
+    response = drive_service.files().list(q=query).execute()
+    files = response.get('files', [])
+
+    if files:
+        file_id = files[0]['id']
+
+        # Download remote content
+        request = drive_service.files().get_media(fileId=file_id)
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+
+        # ✅ Use hash comparison
+        remote_hash = hashlib.sha256(fh.getvalue()).hexdigest()
+        local_hash = hashlib.sha256(local_content).hexdigest()
+        if remote_hash == local_hash:
+            return
+
+        drive_service.files().delete(fileId=file_id).execute()
+
+    file_stream.seek(0)
+    media = MediaIoBaseUpload(file_stream, mimetype='application/octet-stream')
+    file_metadata = {'name': filename, 'parents': [folder_id]}
+    drive_service.files().create(body=file_metadata, media_body=media).execute()
 
 def download_from_drive(filename):
+    if os.path.exists(filename):
+        print(f"📂 '{filename}' already exists locally. Skipping download.")
+        return True
+
     folder_id = get_folder_id()
-    results = drive_service.files().list(q=f"name='{filename}' and '{folder_id}' in parents", fields="files(id)").execute()
-    files = results.get('files', [])
+    query = f"'{folder_id}' in parents and name='{filename}' and trashed=false"
+    response = drive_service.files().list(q=query).execute()
+    files = response.get('files', [])
+
     if not files:
+        print(f"❌ '{filename}' not found on Drive.")
         return False
+
     file_id = files[0]['id']
     request = drive_service.files().get_media(fileId=file_id)
     fh = io.BytesIO()
     downloader = MediaIoBaseDownload(fh, request)
+
     done = False
     while not done:
-        _, done = downloader.next_chunk()
+        status, done = downloader.next_chunk()
+
     with open(filename, 'wb') as f:
         f.write(fh.getvalue())
+
+    print(f"✅ Downloaded '{filename}' from Drive.")
     return True
 
 # ========== Historical Data Fetching ==========
@@ -147,6 +231,7 @@ def load_or_fetch_data():
         df = fetch_paginated_ohlcv()
         df.reset_index(inplace=True)  # Converts index back to Timestamp column
         df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
+    if not os.path.exists(DATA_FILE):
         df.to_csv(DATA_FILE, index=False)
         upload_to_drive(DATA_FILE)
         return df
@@ -205,15 +290,16 @@ def train_model():
     df['Pct_Change'] = (df['Future_Close'] - df['Close']) / df['Close']
     df['Target'] = df['Pct_Change'].apply(lambda x: 2 if x > 0.003 else (0 if x < -0.003 else 1))
 
+    # Drop rows with NaNs
     df.dropna(inplace=True)
 
-    # Feature/Target split
+    # Feature and Target Split
     features = ['EMA9', 'EMA21', 'VWAP', 'RSI', 'MACD', 'MACD_Signal',
                 'ATR', 'ROC', 'OBV', 'EMA12_Cross_26', 'EMA9_Cross_21', 'Above_VWAP']
     X = df[features]
     y = df['Target']
 
-    # ✅ Check class balance
+    # ✅ Missing Class Check
     expected_classes = [0, 1, 2]
     actual_classes = sorted(y.unique())
     missing_classes = set(expected_classes) - set(actual_classes)
@@ -222,38 +308,44 @@ def train_model():
         st.warning(f"⚠️ Missing classes in training data: {missing_classes}")
         return None, None
 
+    # Scaling & Training
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
+    # ✅ Balanced class weights
     class_weights = compute_class_weight('balanced', classes=np.array(expected_classes), y=y)
     weight_dict = dict(zip(expected_classes, class_weights))
 
     model = RandomForestClassifier(n_estimators=50, random_state=42, class_weight=weight_dict)
     model.fit(X_scaled, y)
 
-    # Save model to Drive
+    # Serialize Model + Scaler
     model_bytes = pickle.dumps((model, scaler))
     upload_to_drive_stream(io.BytesIO(model_bytes), MODEL_FILE)
 
-    # Save training timestamp
+    # ✅ Save training timestamp ONLY after successful training
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    upload_to_drive_content(LAST_TRAIN_FILE, timestamp)
+    with open(LAST_TRAIN_FILE, 'w') as f:
+        f.write(timestamp)
+    upload_to_drive(LAST_TRAIN_FILE)
 
     return model, scaler
+
 # ========== Utility Functions ==========
 
 def save_last_train_time():
+    timestamp = datetime.now().replace(microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
     try:
         with open(LAST_TRAIN_FILE, 'w') as f:
-            f.write(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-        upload_to_drive(LAST_TRAIN_FILE)
+            f.write(timestamp)
+        upload_to_drive_content(LAST_TRAIN_FILE, timestamp)
     except Exception as e:
         st.error(f"❌ Failed to save last train time: {e}")
 
 def load_model_from_drive():
     if not download_from_drive(MODEL_FILE):
-        st.error("❌ Failed to load model from Drive. Training new one.")
-        return train_model()
+        st.error("❌ Failed to load model from Drive.")
+        return None, None
     with open(MODEL_FILE, 'rb') as f:
         return pickle.load(f)
 
@@ -283,19 +375,16 @@ def get_training_data():
     return pd.DataFrame()
 
 def load_model_and_scaler():
-    """
-    Loads the model and scaler from local files if available and valid.
-    If they are missing or unreadable, it triggers training from scratch.
-    """
-    if os.path.exists(MODEL_FILE) and os.path.exists(SCALER_FILE):
-        try:
+    if should_retrain():
+        return train_model()
+    else:
+        # Load locally or from drive
+        if os.path.exists(MODEL_FILE) and os.path.exists(SCALER_FILE):
             model = joblib.load(MODEL_FILE)
             scaler = joblib.load(SCALER_FILE)
             return model, scaler
-        except Exception as e:
-            st.warning(f"⚠️ Error loading local model/scaler: {e}")
-            st.info("🔁 Re-training model due to load error.")
-    return train_model()
+        else:
+            return train_model()
 
 def load_model_from_drive():
     if not download_from_drive(MODEL_FILE):
@@ -317,21 +406,24 @@ model, scaler = load_model_and_scaler()
 RETRAIN_INTERVAL = timedelta(hours=12)
 
 def should_retrain():
-    if not download_from_drive(LAST_TRAIN_FILE):
-        st.warning("📄 No last_train.txt found on Drive. Retraining.")
-        return True
+    if not os.path.exists(LAST_TRAIN_FILE):
+        st.warning("📄 'last_train.txt' not found locally. Attempting to download from Drive...")
+        if not download_from_drive(LAST_TRAIN_FILE):
+            st.warning("📄 'last_train.txt' not found on Drive. Retraining.")
+            return True
+
     try:
         with open(LAST_TRAIN_FILE, 'r') as f:
             last_train_str = f.read().strip()
         last_train_time = datetime.strptime(last_train_str, "%Y-%m-%d %H:%M:%S")
         if datetime.now() - last_train_time > RETRAIN_INTERVAL:
-            st.info("🕒 12 hours passed. Retraining model.")
+            st.info("🕒 Retraining required. More than 12 hours passed.")
             return True
         else:
-            st.success("✅ Model recently trained. Skipping retrain.")
+            st.success("✅ Recent training detected. Skipping retrain.")
             return False
     except Exception as e:
-        st.error(f"⚠️ Error reading last_train.txt: {e}")
+        st.error(f"⚠️ Error parsing 'last_train.txt': {e}")
         return True
 
 # Only automatic retrain or load from drive — no sidebar button
@@ -351,8 +443,8 @@ mode = st.radio("Mode", ["Live", "Backtest"], horizontal=True)
 est = pytz.timezone('US/Eastern')
 exchange = ccxt.coinbase()
 logfile = "btc_alert_log.csv"
-if not os.path.exists(logfile):
-    pd.DataFrame(columns=["Timestamp", "Price", "Signal", "Scores"]).to_csv(logfile, index=False)
+if not os.path.exists(logfile) and "signal_log" in st.session_state and st.session_state.signal_log:
+    pd.DataFrame(st.session_state.signal_log).to_csv(logfile, index=False)
 
 # ========== Data Function ==========
 def get_data():
