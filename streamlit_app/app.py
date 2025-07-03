@@ -339,6 +339,7 @@ def should_retrain():
 # Only automatic retrain or load from drive — no sidebar button
 if should_retrain():
     model, scaler = train_model()
+    save_last_train_time()
 else:
     model, scaler = load_model_from_drive()
 
