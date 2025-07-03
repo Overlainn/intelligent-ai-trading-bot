@@ -333,7 +333,7 @@ def train_model():
 
 # ========== Local Training Functions ==========
 
-
+RETRAIN_INTERVAL = timedelta(hours=12)
 
 def save_last_train_time():
     timestamp = datetime.now().replace(microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
@@ -476,9 +476,13 @@ def load_model_from_drive():
 
 def load_scaler():
     if not download_from_drive(SCALER_FILE):
-        st.error("❌ Failed to load scaler from Drive. Training new one.")
-        return train_model()[1]
-    return joblib.load(SCALER_FILE)
+        st.error("❌ Failed to load scaler from Drive.")
+        return None
+    try:
+        return joblib.load(SCALER_FILE)
+    except Exception as e:
+        st.error(f"❌ Error loading scaler: {e}")
+        return None
 
 # 🔧 Feature list used in model
 features = ['EMA9', 'EMA21', 'VWAP', 'RSI', 'MACD', 'MACD_Signal',
@@ -557,6 +561,14 @@ if mode == "Live":
     # ✅ Load model and scaler
     model, scaler = load_model_from_drive()
 
+    if model is None or scaler is None:
+        st.warning("⚠️ Model or scaler missing. Retraining...")
+        model, scaler = train_model()
+        if model is None or scaler is None:
+            st.error("❌ Model or Scaler failed to load. Cannot proceed with live predictions.")
+            st.stop()
+
+
     # 🧠 Check if model or scaler failed to load
     if model is None or scaler is None:
         st.error("🚨 Model or Scaler failed to load. Cannot proceed with live predictions.")
@@ -578,11 +590,7 @@ if mode == "Live":
     df = get_data()
     features = ['EMA9', 'EMA21', 'VWAP', 'RSI', 'MACD', 'MACD_Signal',
             'ATR', 'ROC', 'OBV', 'EMA12_Cross_26', 'EMA9_Cross_21', 'Above_VWAP']
-
-    if model is None or scaler is None:
-        st.error("❌ Model or scaler is not loaded. Please retrain or check Drive access.")
-        st.stop()
-    
+    X = scaler.transform(df[features])
     raw_probs = model.predict_proba(X)
 
     # Ensure 3 class probabilities
