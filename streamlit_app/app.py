@@ -36,7 +36,7 @@ from trading_engine.strategy import should_enter_trade
 # ✅ Model/scaler functions — ADD THIS HERE:
 import joblib
 
-def load_model():
+def ():
     return joblib.load("model.pkl")
 
 def load_scaler():
@@ -317,7 +317,7 @@ if mode == "Live":
     st.header("🟢 Live Mode")
 
     # ✅ Load model and scaler
-    model = load_model()
+    model = load_model_from_drive()
     scaler = load_scaler()
 
     # ✅ Initialize signal log in session state if needed
