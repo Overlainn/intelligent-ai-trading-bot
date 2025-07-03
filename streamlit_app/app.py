@@ -226,8 +226,8 @@ def train_model():
     df = load_or_fetch_data()
 
     # 🔒 Ensure data file exists and is up-to-date
-    df.to_csv(DATA_FILE)  # Overwrite or create locally
-    upload_to_drive(DATA_FILE)  # Upload to Drive
+    df.to_csv(DATA_FILE, index=False)
+    upload_to_drive(DATA_FILE)
 
     # Feature Engineering
     df['EMA9'] = ta.trend.ema_indicator(df['Close'], window=9)
@@ -241,26 +241,40 @@ def train_model():
     df['OBV'] = ta.volume.on_balance_volume(df['Close'], df['Volume'])
     df['EMA12'] = ta.trend.ema_indicator(df['Close'], window=12)
     df['EMA26'] = ta.trend.ema_indicator(df['Close'], window=26)
+
+    # Crossover & Relative Features
     df['EMA12_Cross_26'] = (df['EMA12'] > df['EMA26']).astype(int)
     df['EMA9_Cross_21'] = (df['EMA9'] > df['EMA21']).astype(int)
     df['Above_VWAP'] = (df['Close'] > df['VWAP']).astype(int)
 
+    # Target Engineering
     df['Future_Close'] = df['Close'].shift(-3)
     df['Pct_Change'] = (df['Future_Close'] - df['Close']) / df['Close']
     df['Target'] = df['Pct_Change'].apply(lambda x: 2 if x > 0.003 else (0 if x < -0.003 else 1))
+
+    # Drop rows with NaNs
     df.dropna(inplace=True)
 
+    # Feature and Target Split
     features = ['EMA9', 'EMA21', 'VWAP', 'RSI', 'MACD', 'MACD_Signal',
                 'ATR', 'ROC', 'OBV', 'EMA12_Cross_26', 'EMA9_Cross_21', 'Above_VWAP']
     X = df[features]
     y = df['Target']
 
-    scaler = StandardScaler().fit(X)
-    model = RandomForestClassifier(n_estimators=50).fit(scaler.transform(X), y)
+    # Scaling & Training
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
 
+    model = RandomForestClassifier(n_estimators=50, random_state=42)
+    model.fit(X_scaled, y)
+
+    # Serialize Model + Scaler
     model_bytes = pickle.dumps((model, scaler))
     upload_to_drive_stream(io.BytesIO(model_bytes), MODEL_FILE)
-    upload_to_drive_content(LAST_TRAIN_FILE, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+    # Save training timestamp
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    upload_to_drive_content(LAST_TRAIN_FILE, timestamp)
 
     return model, scaler
 
