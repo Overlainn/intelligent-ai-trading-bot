@@ -215,17 +215,16 @@ def train_model():
     X = df[features]
     y = df['Target']
 
-    # ✅ Check class balance
-    class_counts = y.value_counts(normalize=True)
-    st.write("📊 Target class distribution:", class_counts)
+class_counts = y.value_counts(normalize=True)
+st.write("📊 Target class distribution:", class_counts)
 
-    expected_classes = [0, 1, 2]
-    actual_classes = sorted(y.unique())
-    missing_classes = set(expected_classes) - set(actual_classes)
+expected_classes = [0, 1, 2]
+actual_classes = sorted(y.unique())
+missing_classes = set(expected_classes) - set(actual_classes)
 
-  if missing_classes:
-      st.warning(f"⚠️ Missing classes in training data: {missing_classes}")
-      return None, None
+if missing_classes:
+    st.warning(f"⚠️ Missing classes in training data: {missing_classes}")
+    return None, None
 
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
