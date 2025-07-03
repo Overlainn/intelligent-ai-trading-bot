@@ -285,10 +285,18 @@ def get_training_data():
     return pd.DataFrame()
 
 def load_model_and_scaler():
+    """
+    Loads the model and scaler from local files if available and valid.
+    If they are missing or unreadable, it triggers training from scratch.
+    """
     if os.path.exists(MODEL_FILE) and os.path.exists(SCALER_FILE):
-        model = joblib.load(MODEL_FILE)
-        scaler = joblib.load(SCALER_FILE)
-        return model, scaler
+        try:
+            model = joblib.load(MODEL_FILE)
+            scaler = joblib.load(SCALER_FILE)
+            return model, scaler
+        except Exception as e:
+            st.warning(f"⚠️ Error loading local model/scaler: {e}")
+            st.info("🔁 Re-training model due to load error.")
     return train_model()
 
 def load_model_from_drive():
