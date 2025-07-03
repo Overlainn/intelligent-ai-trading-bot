@@ -163,7 +163,7 @@ def train_model():
 
     df['Future_Close'] = df['Close'].shift(-3)
     df['Pct_Change'] = (df['Future_Close'] - df['Close']) / df['Close']
-    df['Target'] = df['Pct_Change'].apply(lambda x: 2 if x > 0.0015 else (0 if x < -0.0015 else 1))
+    df['Target'] = df['Pct_Change'].apply(lambda x: 2 if x > 0.003 else (0 if x < -0.003 else 1))
     df.dropna(inplace=True)
 
     features = ['EMA9', 'EMA21', 'VWAP', 'RSI', 'MACD', 'MACD_Signal',
