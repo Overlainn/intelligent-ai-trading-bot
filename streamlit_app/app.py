@@ -37,6 +37,7 @@ MODEL_FILE = "model.pkl"
 SCALER_FILE = "scaler.pkl"
 DATA_FILE = "btc_data.csv"
 LAST_TRAIN_FILE = "last_train.txt"
+RETRAIN_INTERVAL = timedelta(hours=12)
 FOLDER_NAME = "StreamlitITB"
 
 SCOPES = ['https://www.googleapis.com/auth/drive']
@@ -303,14 +304,21 @@ RETRAIN_INTERVAL = timedelta(hours=12)
 
 def should_retrain():
     if not download_from_drive(LAST_TRAIN_FILE):
+        st.warning("📄 No last_train.txt found on Drive. Retraining.")
         return True
-    with open(LAST_TRAIN_FILE, 'r') as f:
-        last_train_str = f.read().strip()
     try:
+        with open(LAST_TRAIN_FILE, 'r') as f:
+            last_train_str = f.read().strip()
         last_train_time = datetime.strptime(last_train_str, "%Y-%m-%d %H:%M:%S")
-    except ValueError:
+        if datetime.now() - last_train_time > RETRAIN_INTERVAL:
+            st.info("🕒 12 hours passed. Retraining model.")
+            return True
+        else:
+            st.success("✅ Model recently trained. Skipping retrain.")
+            return False
+    except Exception as e:
+        st.error(f"⚠️ Error reading last_train.txt: {e}")
         return True
-    return datetime.now() - last_train_time > RETRAIN_INTERVAL
 
 # Only automatic retrain or load from drive — no sidebar button
 if should_retrain():
