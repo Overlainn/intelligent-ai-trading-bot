@@ -228,16 +228,16 @@ def train_model():
     weight_dict = dict(zip(expected_classes, class_weights))
 
     model = XGBClassifier(
-    n_estimators=150,
-    learning_rate=0.05,
-    max_depth=5,
-    subsample=0.8,
-    colsample_bytree=0.8,
-    use_label_encoder=False,
-    eval_metric='mlogloss',
-    random_state=42
-)
-model.fit(X_scaled, y)
+        n_estimators=150,
+        learning_rate=0.05,
+        max_depth=5,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        use_label_encoder=False,
+        eval_metric='mlogloss',
+        random_state=42
+    )
+    model.fit(X_scaled, y)
 
     # Save model to Drive
     model_bytes = pickle.dumps((model, scaler))
@@ -248,6 +248,7 @@ model.fit(X_scaled, y)
     upload_to_drive_content(LAST_TRAIN_FILE, timestamp)
 
     return model, scaler
+
 # ========== Utility Functions ==========
 
 def save_last_train_time():
