@@ -351,6 +351,8 @@ def load_model_from_drive():
 
 # ========== Local Training Functions ==========
 
+RETRAIN_INTERVAL = timedelta(hours=12)
+
 def save_last_train_time():
     try:
         with open(LAST_TRAIN_FILE, 'w') as f:
@@ -358,6 +360,27 @@ def save_last_train_time():
         upload_to_drive(LAST_TRAIN_FILE)
     except Exception as e:
         st.error(f"❌ Failed to save last train time: {e}")
+
+def should_retrain():
+    if not os.path.exists(LAST_TRAIN_FILE):
+        st.warning("📄 'last_train.txt' not found locally. Trying to download from Drive...")
+        if not download_from_drive(LAST_TRAIN_FILE):
+            st.warning("📄 Not found on Drive. Will retrain.")
+            return True
+
+    try:
+        with open(LAST_TRAIN_FILE, 'r') as f:
+            last_train_str = f.read().strip()
+        last_train_time = datetime.strptime(last_train_str, "%Y-%m-%d %H:%M:%S")
+        if datetime.now() - last_train_time > RETRAIN_INTERVAL:
+            st.info("🕒 More than 12 hours passed. Retraining.")
+            return True
+        else:
+            st.success("✅ Model trained recently. Skipping retrain.")
+            return False
+    except Exception as e:
+        st.error(f"⚠️ Error reading 'last_train.txt': {e}")
+        return True
 
 def get_training_data():
     if os.path.exists(DATA_FILE):
@@ -383,11 +406,34 @@ def get_training_data():
     st.error(f"❌ Training data '{DATA_FILE}' not found.")
     return pd.DataFrame()
 
+def train_model():
+    df = get_training_data()
+    if df.empty:
+        st.error("❌ No training data. Aborting training.")
+        return None, None
+
+    X = df[features]
+    y = df['Target']
+
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    model.fit(X_scaled, y)
+
+    joblib.dump(model, MODEL_FILE)
+    joblib.dump(scaler, SCALER_FILE)
+
+    save_last_train_time()
+    upload_to_drive(MODEL_FILE)
+    upload_to_drive(SCALER_FILE)
+
+    return model, scaler
+
 def load_model_and_scaler():
     if should_retrain():
         return train_model()
     else:
-        # Load locally or from drive
         if os.path.exists(MODEL_FILE) and os.path.exists(SCALER_FILE):
             model = joblib.load(MODEL_FILE)
             scaler = joblib.load(SCALER_FILE)
@@ -408,40 +454,12 @@ def load_scaler():
         return train_model()[1]
     return joblib.load(SCALER_FILE)
 
-# ========== Load or Retrain Model ==========
+# ✅ Use once at startup
+model, scaler = load_model_and_scaler()
 
-RETRAIN_INTERVAL = timedelta(hours=12)
-
-def should_retrain():
-    if not os.path.exists(LAST_TRAIN_FILE):
-        st.warning("📄 'last_train.txt' not found locally. Attempting to download from Drive...")
-        if not download_from_drive(LAST_TRAIN_FILE):
-            st.warning("📄 'last_train.txt' not found on Drive. Retraining.")
-            return True
-
-    try:
-        with open(LAST_TRAIN_FILE, 'r') as f:
-            last_train_str = f.read().strip()
-        last_train_time = datetime.strptime(last_train_str, "%Y-%m-%d %H:%M:%S")
-        if datetime.now() - last_train_time > RETRAIN_INTERVAL:
-            st.info("🕒 Retraining required. More than 12 hours passed.")
-            return True
-        else:
-            st.success("✅ Recent training detected. Skipping retrain.")
-            return False
-    except Exception as e:
-        st.error(f"⚠️ Error parsing 'last_train.txt': {e}")
-        return True
-
-# ✅ Only retrain if needed
-if should_retrain():
-    model, scaler = train_model()
-    save_last_train_time()
-else:
-    model, scaler = load_model_from_drive()
-
-features = ['EMA9', 'EMA21', 'VWAP', 'RSI', 'MACD', 'MACD_Signal', 'ATR', 'ROC', 'OBV',
-            'EMA12_Cross_26', 'EMA9_Cross_21', 'Above_VWAP']
+# 🔧 Feature list used in model
+features = ['EMA9', 'EMA21', 'VWAP', 'RSI', 'MACD', 'MACD_Signal',
+            'ATR', 'ROC', 'OBV', 'EMA12_Cross_26', 'EMA9_Cross_21', 'Above_VWAP']
 
 # ========== UI ==========
 st.set_page_config(layout='wide')
