@@ -22,6 +22,7 @@ import streamlit as st
 import pytz
 
 # Google Drive
+import hashlib
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload, MediaFileUpload
@@ -84,8 +85,10 @@ def upload_to_drive(filename):
         while not done:
             _, done = downloader.next_chunk()
 
-        if fh.getvalue() == local_content:
-            # ✅ No change, skip upload
+        # ✅ Use hash comparison
+        remote_hash = hashlib.sha256(fh.getvalue()).hexdigest()
+        local_hash = hashlib.sha256(local_content).hexdigest()
+        if remote_hash == local_hash:
             return
 
         # ❌ Content differs, delete and re-upload
@@ -116,7 +119,10 @@ def upload_to_drive_content(filename, content):
         while not done:
             _, done = downloader.next_chunk()
 
-        if fh.getvalue() == local_buffer:
+        # ✅ Use hash comparison
+        remote_hash = hashlib.sha256(fh.getvalue()).hexdigest()
+        local_hash = hashlib.sha256(local_buffer).hexdigest()
+        if remote_hash == local_hash:
             return
 
         drive_service.files().delete(fileId=file_id).execute()
@@ -146,7 +152,10 @@ def upload_to_drive_stream(file_stream, filename):
         while not done:
             _, done = downloader.next_chunk()
 
-        if fh.getvalue() == local_content:
+        # ✅ Use hash comparison
+        remote_hash = hashlib.sha256(fh.getvalue()).hexdigest()
+        local_hash = hashlib.sha256(local_content).hexdigest()
+        if remote_hash == local_hash:
             return
 
         drive_service.files().delete(fileId=file_id).execute()
