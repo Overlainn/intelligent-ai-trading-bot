@@ -287,10 +287,15 @@ def get_data():
     return df
 
 # ========== Live Mode ==========
+# ========== Live Mode ==========
 if mode == "Live":
     st.header("🟢 Live Mode")
 
-    # ✅ Initialize signal log in session state if needed
+    # ✅ Load model and scaler
+    model = load_model()
+    scaler = load_scaler()
+
+    # ✅ Initialize signal log
     if "signal_log" not in st.session_state:
         if download_from_drive("signal_log.csv"):
             try:
@@ -302,24 +307,25 @@ if mode == "Live":
         else:
             st.session_state.signal_log = []
 
-    # ✅ Load data and make prediction
+    # ✅ Get data & transform features
     df = get_data()
+    features = [...]  # <-- Replace with your actual features
     X = scaler.transform(df[features])
-    raw_probs = model.predict_proba(X)
-    raw_probs = np.asarray(raw_probs)
 
-    # Ensure 3 classes (Short, Neutral, Long)
-    full_probs = np.zeros((raw_probs.shape[0], 3))
+    # ✅ Model predictions
+    df['Prediction'] = model.predict(X)
+    raw_probs = np.asarray(model.predict_proba(X))
+
+    # Handle class alignment
+    full_probs = np.zeros((raw_probs.shape[0], 3))  # 3 classes: Short=0, Neutral=1, Long=2
     for idx, cls in enumerate(model.classes_):
         full_probs[:, cls] = raw_probs[:, idx]
 
-    # Add prediction columns
-    df['Prediction'] = model.predict(X)
     df['S0'] = full_probs[:, 0]
     df['S1'] = full_probs[:, 1]
     df['S2'] = full_probs[:, 2]
 
-    # ✅ Extract last row
+    # ✅ Latest row
     last = df.iloc[-1]
     signal = None
     confidence = 0
@@ -331,7 +337,7 @@ if mode == "Live":
         signal = 'Short'
         confidence = last['S0']
 
-    # ✅ Log only actual signals
+    # ✅ Log valid signals
     if signal:
         st.session_state.signal_log.append({
             "Timestamp": last.name,
@@ -343,20 +349,20 @@ if mode == "Live":
             "Confidence": round(confidence, 4)
         })
 
-    # ✅ Keep only last 100 entries AND filter out non-signals older than 45 minutes
+    # ✅ Filter log (last 100 entries & recent 45 min)
     now = pd.Timestamp.utcnow()
     st.session_state.signal_log = [
         entry for entry in st.session_state.signal_log
-        if (entry["Signal"] != "None" and pd.to_datetime(entry["Timestamp"], errors="coerce") >= now - pd.Timedelta(minutes=45))
+        if pd.to_datetime(entry["Timestamp"], errors="coerce") >= now - pd.Timedelta(minutes=45)
     ][-100:]
 
-    # ✅ Save to CSV and upload
+    # ✅ Save & upload log
     signal_df = pd.DataFrame(st.session_state.signal_log)
     csv_file = "signal_log.csv"
     signal_df.to_csv(csv_file, index=False)
     upload_to_drive(csv_file)
 
-    # 📈 Plot
+    # 📈 Chart
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df.index, y=df['Close'], name='Price', line=dict(color='lightblue')))
     fig.add_trace(go.Scatter(x=df.index, y=df['EMA9'], name='EMA9', line=dict(color='blue')))
@@ -386,7 +392,7 @@ if mode == "Live":
     st.subheader("📊 Signal Log")
     st.dataframe(signal_df.sort_values(by="Timestamp", ascending=False), use_container_width=True)
 
-    # 🔁 Force Retrain
+    # 🔁 Force Retrain Button
     st.markdown("---")
     if st.button("🔁 Force Retrain", type="primary"):
         with st.spinner("Retraining model..."):
