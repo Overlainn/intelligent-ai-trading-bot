@@ -345,25 +345,25 @@ if mode == "Live":
     )
     st.plotly_chart(fig, use_container_width=True)
 
-# 📋 Signal Log Table
-st.subheader("📊 Signal Log")
+    # 📋 Signal Log Table
+    st.subheader("📊 Signal Log")
 
-# Convert to DataFrame
-signal_df = pd.DataFrame(signal_log, columns=["Timestamp", "Signal", "Confidence"])
+    # Convert to DataFrame
+    signal_df = pd.DataFrame(signal_log, columns=["Timestamp", "Signal", "Confidence"])
 
-# Convert Timestamp to datetime if not already
-signal_df['Timestamp'] = pd.to_datetime(signal_df['Timestamp'], errors='coerce')
+    # Convert Timestamp to datetime if not already
+    signal_df['Timestamp'] = pd.to_datetime(signal_df['Timestamp'], errors='coerce')
 
-# Filter out signals older than 45 minutes
-now = pd.Timestamp.utcnow()  # Or use pd.Timestamp.now(tz='UTC') if timezones matter
-signal_df = signal_df[signal_df['Timestamp'] >= now - pd.Timedelta(minutes=45)]
+    # Filter out signals older than 45 minutes
+    now = pd.Timestamp.utcnow()  # Or use pd.Timestamp.now(tz='UTC') if timezones matter
+    signal_df = signal_df[signal_df['Timestamp'] >= now - pd.Timedelta(minutes=45)]
 
-# Sort by latest first
-signal_df_sorted = signal_df.sort_values(by="Timestamp", ascending=False)
-
-# Display
-st.dataframe(signal_df_sorted, use_container_width=True)
-
+    # Sort by latest first
+    signal_df_sorted = signal_df.sort_values(by="Timestamp", ascending=False)
+    
+    # Display
+    st.dataframe(signal_df_sorted, use_container_width=True)
+    
     # 🔁 Force Retrain Button
     with st.container():
         st.markdown("---")
