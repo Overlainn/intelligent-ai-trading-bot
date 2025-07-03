@@ -556,7 +556,13 @@ if mode == "Live":
     if st.button("🔁 Force Retrain", type="primary"):
         with st.spinner("Retraining model..."):
             model, scaler = train_model()
-            st.success("✅ Model retrained successfully.")
+        
+            if model is None:
+                st.error("❌ Retrain failed — model returned None.")
+            else:
+                st.success("✅ Model retrained successfully.")
+                st.write("📦 Model and scaler:", model, scaler)
+        
             st.rerun()
 
 # ========== Backtest Mode ==========
