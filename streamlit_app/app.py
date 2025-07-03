@@ -386,7 +386,8 @@ if mode == "Live":
 
     # ✅ Load latest live data
     df = get_data()
-    features = [...]  # Replace with your actual feature columns
+    features = ['EMA9', 'EMA21', 'VWAP', 'RSI', 'MACD', 'MACD_Signal',
+            'ATR', 'ROC', 'OBV', 'EMA12_Cross_26', 'EMA9_Cross_21', 'Above_VWAP']
     X = scaler.transform(df[features])
     raw_probs = model.predict_proba(X)
 
