@@ -350,6 +350,15 @@ def load_model_from_drive():
         return pickle.load(f)
 
 # ========== Local Training Functions ==========
+
+def save_last_train_time():
+    try:
+        with open(LAST_TRAIN_FILE, 'w') as f:
+            f.write(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        upload_to_drive(LAST_TRAIN_FILE)
+    except Exception as e:
+        st.error(f"❌ Failed to save last train time: {e}")
+
 def get_training_data():
     if os.path.exists(DATA_FILE):
         df = pd.read_csv(DATA_FILE)
@@ -399,10 +408,8 @@ def load_scaler():
         return train_model()[1]
     return joblib.load(SCALER_FILE)
 
-# ✅ Load model/scaler at startup
-model, scaler = load_model_and_scaler()
-
 # ========== Load or Retrain Model ==========
+
 RETRAIN_INTERVAL = timedelta(hours=12)
 
 def should_retrain():
@@ -426,7 +433,7 @@ def should_retrain():
         st.error(f"⚠️ Error parsing 'last_train.txt': {e}")
         return True
 
-# Only automatic retrain or load from drive — no sidebar button
+# ✅ Only retrain if needed
 if should_retrain():
     model, scaler = train_model()
     save_last_train_time()
