@@ -467,7 +467,7 @@ def load_model_from_drive():
             st.error(f"❌ Error loading scaler: {e}")
             scaler = None
 
-    # Retrain if either is missing
+    # Fallback if either fails
     if model is None or scaler is None:
         st.warning("⚠️ Model or scaler missing. Retraining...")
         model, scaler = train_model()
@@ -556,6 +556,11 @@ if mode == "Live":
 
     # ✅ Load model and scaler
     model, scaler = load_model_from_drive()
+
+    # 🧠 Check if model or scaler failed to load
+    if model is None or scaler is None:
+        st.error("🚨 Model or Scaler failed to load. Cannot proceed with live predictions.")
+        st.stop()
 
     # ✅ Initialize signal log in session state if needed
     if "signal_log" not in st.session_state:
