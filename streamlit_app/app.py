@@ -369,8 +369,7 @@ if mode == "Live":
     st.header("🟢 Live Mode")
 
     # ✅ Load model and scaler
-    model = load_model_from_drive()
-    scaler = load_scaler()
+    model, scaler = load_model_from_drive()
 
     # ✅ Initialize signal log in session state if needed
     if "signal_log" not in st.session_state:
