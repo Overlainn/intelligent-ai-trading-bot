@@ -331,24 +331,6 @@ def train_model():
 
     return model, scaler
 
-# ========== Utility Functions ==========
-
-def save_last_train_time():
-    timestamp = datetime.now().replace(microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
-    try:
-        with open(LAST_TRAIN_FILE, 'w') as f:
-            f.write(timestamp)
-        upload_to_drive_content(LAST_TRAIN_FILE, timestamp)
-    except Exception as e:
-        st.error(f"❌ Failed to save last train time: {e}")
-
-def load_model_from_drive():
-    if not download_from_drive(MODEL_FILE):
-        st.error("❌ Failed to load model from Drive.")
-        return None, None
-    with open(MODEL_FILE, 'rb') as f:
-        return pickle.load(f)
-
 # ========== Local Training Functions ==========
 
 RETRAIN_INTERVAL = timedelta(hours=12)
