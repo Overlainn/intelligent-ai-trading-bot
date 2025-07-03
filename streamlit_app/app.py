@@ -203,7 +203,7 @@ def train_model():
     # Target Engineering
     df['Future_Close'] = df['Close'].shift(-3)
     df['Pct_Change'] = (df['Future_Close'] - df['Close']) / df['Close']
-    df['Target'] = df['Pct_Change'].apply(lambda x: 2 if x > 0.003 else (0 if x < -0.003 else 1))
+    df['Target'] = df['Pct_Change'].apply(lambda x: 2 if x > 0.001 else (0 if x < -0.001 else 1))
 
     df.dropna(inplace=True)
 
@@ -274,7 +274,7 @@ def get_training_data():
         # ✅ Feature Engineering
         df['Future_Close'] = df['Close'].shift(-3)
         df['Pct_Change'] = (df['Future_Close'] - df['Close']) / df['Close']
-        df['Target'] = df['Pct_Change'].apply(lambda x: 2 if x > 0.003 else (0 if x < -0.003 else 1))
+        df['Target'] = df['Pct_Change'].apply(lambda x: 2 if x > 0.001 else (0 if x < -0.001 else 1))
         df.dropna(inplace=True)
 
         return df
@@ -540,8 +540,8 @@ elif mode == "Backtest":
 
             # Entry logic
             if in_position is None:
-                valid_long = row['Prediction'] == 2 and row['S2'] > 0.6
-                valid_short = row['Prediction'] == 0 and row['S0'] > 0.6
+                valid_long = row['Prediction'] == 2 and row['S2'] > 0.55
+                valid_short = row['Prediction'] == 0 and row['S0'] > 0.55
                 passes_itb = row['ITB'] if use_itb == "ITB" else True
 
                 if valid_long and passes_itb:
@@ -553,7 +553,7 @@ elif mode == "Backtest":
 
             # Exit logic
             elif in_position == "LONG":
-                if row['Prediction'] == 0 and row['S0'] > 0.6:
+                if row['Prediction'] == 0 and row['S0'] > 0.55:
                     trades.append({
                         "Entry Time": entry_time,
                         "Exit Time": row.name,
@@ -568,7 +568,7 @@ elif mode == "Backtest":
                     in_position = None
 
             elif in_position == "SHORT":
-                if row['Prediction'] == 2 and row['S2'] > 0.6:
+                if row['Prediction'] == 2 and row['S2'] > 0.55:
                     trades.append({
                         "Entry Time": entry_time,
                         "Exit Time": row.name,
