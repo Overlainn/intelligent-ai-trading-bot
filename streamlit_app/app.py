@@ -290,6 +290,10 @@ def get_training_data():
         df['Pct_Change'] = (df['Future_Close'] - df['Close']) / df['Close']
         df['Target'] = df['Pct_Change'].apply(lambda x: 2 if x > 0.0003 else (0 if x < -0.0003 else 1))
         df.dropna(inplace=True)
+      # 📊 Show Target Class Distribution
+        st.subheader("📊 Target Class Distribution")
+        class_dist = df['Target'].value_counts(normalize=True).sort_index()
+        st.write(class_dist.apply(lambda x: f"{x:.2%}"))
 
         return df
 
