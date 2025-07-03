@@ -349,7 +349,7 @@ if mode == "Live":
     st.subheader("📊 Signal Log")
 
     # Initialize signal log if not present
-    if "signal_log" not in st.session_state:
+if "signal_log" not in st.session_state:
     st.session_state.signal_log = []
 
     # Alias for easier use
