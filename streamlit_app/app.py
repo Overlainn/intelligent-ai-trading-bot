@@ -78,6 +78,19 @@ def load_model_and_scaler():
         return model, scaler
     return train_model()
 
+def load_model_from_drive():
+    if not download_from_drive(MODEL_FILE):
+        st.error("❌ Failed to load model from Drive. Training new one.")
+        return train_model()
+    with open(MODEL_FILE, 'rb') as f:
+        return pickle.load(f)
+
+def load_scaler():
+    if not download_from_drive(SCALER_FILE):
+        st.error("❌ Failed to load scaler from Drive. Training new one.")
+        return train_model()[1]
+    return joblib.load(SCALER_FILE)
+
 # ✅ Load model/scaler at startup
 model, scaler = load_model_and_scaler()
 
