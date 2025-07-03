@@ -336,10 +336,11 @@ def train_model():
 RETRAIN_INTERVAL = timedelta(hours=12)
 
 def save_last_train_time():
+    timestamp = datetime.now().replace(microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
     try:
         with open(LAST_TRAIN_FILE, 'w') as f:
-            f.write(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-        upload_to_drive(LAST_TRAIN_FILE)
+            f.write(timestamp)
+        upload_to_drive_content(LAST_TRAIN_FILE, timestamp)
     except Exception as e:
         st.error(f"❌ Failed to save last train time: {e}")
 
