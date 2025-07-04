@@ -5,6 +5,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 # Core libraries
 import time, io, pickle, requests
 from datetime import datetime, date, timedelta
+from streamlit_autorefresh import st_autorefresh
 
 # Data and ML
 import pandas as pd
@@ -428,6 +429,10 @@ def get_data():
 # ========== Live Mode ==========
 if mode == "Live":
     st.header("🟢 Live Mode")
+
+    # 🔁 Auto-refresh every 60 seconds (adjust as needed)
+    from streamlit_autorefresh import st_autorefresh
+    st_autorefresh(interval=300000, limit=None, key="live_refresh")
 
     # ✅ Load model and scaler
     model, scaler = load_model_from_drive()
