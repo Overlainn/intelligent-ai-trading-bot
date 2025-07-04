@@ -432,7 +432,7 @@ if mode == "Live":
 
     # 🔁 Auto-refresh every 60 seconds (adjust as needed)
     from streamlit_autorefresh import st_autorefresh
-    st_autorefresh(interval=300000, limit=None, key="live_refresh")
+    st_autorefresh(interval=900000, limit=None, key="live_refresh")
 
     # ✅ Load model and scaler
     model, scaler = load_model_from_drive()
