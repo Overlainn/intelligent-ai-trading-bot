@@ -467,6 +467,8 @@ if mode == "Live":
 
     # ✅ Extract last row
     last = df.iloc[-1]
+    last_timestamp = df.index[-1]  # ✅ fixed timestamp
+
     signal = None
     confidence = 0
 
@@ -480,12 +482,12 @@ if mode == "Live":
     # ✅ Remove existing entry for same timestamp
     st.session_state.signal_log = [
         entry for entry in st.session_state.signal_log
-        if pd.to_datetime(entry["Timestamp"], errors="coerce") != last.name
+        if pd.to_datetime(entry["Timestamp"], errors="coerce") != last_timestamp
     ]
 
     # ✅ Log every 15min prediction regardless of signal strength
     st.session_state.signal_log.append({
-        "Timestamp": last.name,
+        "Timestamp": last_timestamp,
         "Price": round(last['Close'], 2),
         "Signal": signal or "None",
         "Short": round(last['S0'], 4),
