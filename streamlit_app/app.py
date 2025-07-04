@@ -560,7 +560,10 @@ if mode == "Live":
         st.info("No signals logged yet.")
 
 
-    st.write("⏰ Last refreshed:", datetime.now().strftime("%H:%M:%S"))
+    import pytz
+    est = pytz.timezone('US/Eastern')
+    now_est = datetime.now(est)
+    st.write("⏰ Last refreshed:", now_est.strftime("%H:%M:%S"))
   
 
     # 🔁 Force Retrain
