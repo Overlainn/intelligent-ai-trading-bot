@@ -559,6 +559,10 @@ if mode == "Live":
     else:
         st.info("No signals logged yet.")
 
+
+    st.write("⏰ Last refreshed:", datetime.now().strftime("%H:%M:%S"))
+  
+
     # 🔁 Force Retrain
     st.markdown("---")
     if st.button("🔁 Force Retrain", type="primary"):
