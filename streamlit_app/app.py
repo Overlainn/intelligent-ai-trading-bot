@@ -430,7 +430,7 @@ def get_data():
 if mode == "Live":
     st.header("🟢 Live Mode")
 
-    # 🔁 Auto-refresh every 60 seconds (adjust as needed)
+    # 🔁 Auto-refresh every 15 minutes
     from streamlit_autorefresh import st_autorefresh
     st_autorefresh(interval=900000, limit=None, key="live_refresh")
 
@@ -517,7 +517,7 @@ if mode == "Live":
     fig.add_trace(go.Scatter(x=df.index, y=df['EMA21'], name='EMA21', line=dict(color='orange')))
     fig.add_trace(go.Scatter(x=df.index, y=df['VWAP'], name='VWAP', line=dict(color='red')))
 
-    # ✅ Plot historical Long/Short signals (S2 > 0.55 or S0 > 0.55)
+    # ✅ Plot historical Long/Short signals
     long_signals = df[(df['Prediction'] == 2) & (df['S2'] > 0.55)]
     short_signals = df[(df['Prediction'] == 0) & (df['S0'] > 0.55)]
 
@@ -552,7 +552,8 @@ if mode == "Live":
     st.subheader("📊 Signal Log")
     if not signal_df.empty and "Timestamp" in signal_df.columns:
         signal_df["Timestamp"] = pd.to_datetime(signal_df["Timestamp"], errors="coerce")
-        st.dataframe(signal_df.sort_values(by="Timestamp", ascending=False), use_container_width=True)
+        signal_df = signal_df.sort_values(by="Timestamp", ascending=False)
+        st.dataframe(signal_df, use_container_width=True)
     else:
         st.info("No signals logged yet.")
 
@@ -561,13 +562,13 @@ if mode == "Live":
     if st.button("🔁 Force Retrain", type="primary"):
         with st.spinner("Retraining model..."):
             model, scaler = train_model()
-        
+
             if model is None:
                 st.error("❌ Retrain failed — model returned None.")
             else:
                 st.success("✅ Model retrained successfully.")
                 st.write("📦 Model and scaler:", model, scaler)
-        
+
             st.rerun()
 
 # ========== Backtest Mode ==========
