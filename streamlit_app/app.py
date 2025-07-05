@@ -472,7 +472,7 @@ if mode == "Live":
     signal = None
     confidence = 0
 
-    if last['Prediction'] == 2 and last['S2'] > 0.55:
+    if last['Prediction'] == 2 and last['S2'] > 0.50:
         signal = 'Long'
         confidence = last['S2']
     elif last['Prediction'] == 0 and last['S0'] > 0.55:
