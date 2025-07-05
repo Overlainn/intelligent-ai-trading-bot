@@ -510,7 +510,8 @@ if mode == "Live":
     signal_df = pd.DataFrame(st.session_state.signal_log)
     signal_df.to_csv("signal_log.csv", index=False)
     upload_to_drive("signal_log.csv")
-    signal_df["Timestamp"] = pd.to_datetime(signal_df["Timestamp"], errors="coerce")
+    signal_df['Timestamp'] = pd.to_datetime(signal_df['Timestamp'], errors='coerce', utc=True)
+    signal_df['Timestamp'] = signal_df['Timestamp'].dt.tz_convert('Etc/UTC')
 
     # 📈 Plot Price + Indicators
     fig = go.Figure()
