@@ -368,7 +368,6 @@ def train_model():
         model.fit(
             X_train_scaled, y_train,
             eval_set=[(X_val_scaled, y_val)],
-            early_stopping_rounds=15,
             verbose=False
         )
         preds = model.predict(X_val_scaled)
