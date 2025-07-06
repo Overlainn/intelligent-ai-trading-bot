@@ -220,9 +220,13 @@ def train_model():
     st.subheader("📚 Training Model")
     progress = st.progress(0, text="Starting...")
 
+    
+
     # Step 1: Load Data
     progress.progress(5, text="📥 Loading dataset...")
-    df = load_or_fetch_data()
+    df = load_or_fetch_data()# Step 1: Load Data
+    df = df.tail(50000)  # <-- Only keep the most recent 50,000 rows
+    st.write(f"Training on {len(df)} most recent rows.")
 
     # Step 2: Save and sync raw file
     df.to_csv(DATA_FILE, index=False)
