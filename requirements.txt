@@ -11,3 +11,8 @@ google-api-python-client>=2.126.0
 google-auth>=2.29.0
 google-auth-oauthlib>=1.2.0
 streamlit-autorefresh
+seaborn
+matplotlib
+joblib
+pytz
+oauth2client
