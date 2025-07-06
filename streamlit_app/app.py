@@ -6,12 +6,15 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import time, io, pickle, requests
 from datetime import datetime, date, timedelta
 from streamlit_autorefresh import st_autorefresh
+from sklearn.model_selection import train_test_split
 
 # Data and ML
 import pandas as pd
 import numpy as np
 import ta
 from xgboost import XGBClassifier
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 # ======= FEATURE SET ========
 FEATURES = [
@@ -245,7 +248,6 @@ if time.time() - st.session_state.last_refresh > 60:
     st.session_state.last_refresh = time.time()
     st.rerun()
 
-# ========== Model Training ==========
 def train_model():
     st.subheader("📚 Training Model")
     progress = st.progress(0, text="Starting...")
@@ -253,7 +255,7 @@ def train_model():
     # Step 1: Load Data
     progress.progress(5, text="📥 Loading dataset...")
     df = load_or_fetch_data()
-    df = df.tail(35000)  # <-- Only keep the most recent 35,000 rows
+    df = df.tail(35000)
     st.write(f"Training on {len(df)} most recent rows.")
 
     # Step 2: Save and sync raw file
@@ -292,24 +294,19 @@ def train_model():
     df['HourOfDay'] = df['Timestamp'].dt.hour
     df['DayOfWeek'] = df['Timestamp'].dt.dayofweek
 
-    # Drop any rows with NaNs in the feature columns
-    df.dropna(subset=FEATURES, inplace=True)
-    progress.progress(45, text="✅ Features engineered.")
-
     # Step 4: Target Engineering (ATR-based thresholds, less noise!)
     progress.progress(55, text="🎯 Generating labels...")
     future_return = (df['Close'].shift(-4) - df['Close']) / df['Close']
-
-    # Dynamic threshold: 0.5 ATR or 0.3%, whichever is larger (per row)
     atr_threshold = 0.5 * df['ATR'] / df['Close']
-    static_threshold = 0.003  # 0.3%
+    static_threshold = 0.003
     threshold = np.maximum(atr_threshold, static_threshold)
-
     df['Target'] = np.where(future_return > threshold, 2,
                     np.where(future_return < -threshold, 0, 1))
 
     st.write("New target class distribution:", df['Target'].value_counts(normalize=True))
-    df.dropna(inplace=True)
+
+    # Drop rows with NaNs in features or target
+    df.dropna(subset=FEATURES + ['Target'], inplace=True)
 
     # Step 5: Prepare training set — ONLY these features
     features = FEATURES
@@ -326,11 +323,16 @@ def train_model():
         st.warning(f"⚠️ Missing classes in training data: {missing_classes}")
         return None, None
 
+    # --- Split into train/validation ---
+    from sklearn.model_selection import train_test_split
+    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, shuffle=False)
+
     progress.progress(65, text="📦 Scaling features and computing class weights...")
     scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_val_scaled = scaler.transform(X_val)
 
-    class_weights = compute_class_weight('balanced', classes=np.array(expected_classes), y=y)
+    class_weights = compute_class_weight('balanced', classes=np.array(expected_classes), y=y_train)
     weight_dict = dict(zip(expected_classes, class_weights))
 
     # Step 6: Train model
@@ -347,7 +349,31 @@ def train_model():
         eval_metric='mlogloss',
         random_state=42
     )
-    model.fit(X_scaled, y)
+    model.fit(X_train_scaled, y_train)
+
+    # --- Model Diagnostics ---
+    st.subheader("🔍 Model Diagnostics")
+
+    y_pred = model.predict(X_val_scaled)
+    # 1. Classification report
+    report = classification_report(y_val, y_pred, target_names=["Short", "Neutral", "Long"])
+    st.code(report, language='text')
+
+    # 2. Confusion matrix
+    cm = confusion_matrix(y_val, y_pred)
+    fig, ax = plt.subplots()
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
+                xticklabels=["Short", "Neutral", "Long"], 
+                yticklabels=["Short", "Neutral", "Long"])
+    plt.xlabel("Predicted")
+    plt.ylabel("Actual")
+    plt.title("Confusion Matrix")
+    st.pyplot(fig)
+
+    # 3. Feature importances
+    importances = model.feature_importances_
+    st.subheader("🔑 XGBoost Feature Importances")
+    st.bar_chart(pd.Series(importances, index=FEATURES).sort_values(ascending=False))
 
     # Step 7: Save model + scaler
     progress.progress(95, text="💾 Saving model + scaler to Drive...")
@@ -361,7 +387,7 @@ def train_model():
     st.success("🎉 Model trained and uploaded!")
 
     return model, scaler
-  
+
 # ========== Utility Functions ==========
 
 def save_last_train_time():
