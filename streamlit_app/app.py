@@ -505,33 +505,45 @@ scaler = st.session_state.scaler
 
 # ========== Data Function ==========
 def get_data():
-    df = pd.DataFrame(exchange.fetch_ohlcv('BTC/USDT', '15m', limit=5000),
-                      columns=['Timestamp', 'Open', 'High', 'Low', 'Close', 'Volume'])
+    df = pd.DataFrame(
+        exchange.fetch_ohlcv('BTC/USDT', '15m', limit=5000),
+        columns=['Timestamp', 'Open', 'High', 'Low', 'Close', 'Volume']
+    )
+    est = pytz.timezone('US/Eastern')
     df['Timestamp'] = pd.to_datetime(df['Timestamp'], unit='ms').dt.tz_localize('UTC').dt.tz_convert(est)
     df.set_index('Timestamp', inplace=True)
 
-    # Needed for cross/binary features:
+    # === Feature Engineering: MUST match train_model() exactly! ===
     df['EMA12'] = ta.trend.ema_indicator(df['Close'], window=12)
     df['EMA26'] = ta.trend.ema_indicator(df['Close'], window=26)
     df['EMA9'] = ta.trend.ema_indicator(df['Close'], window=9)
     df['EMA21'] = ta.trend.ema_indicator(df['Close'], window=21)
     df['VWAP'] = ta.volume.volume_weighted_average_price(df['High'], df['Low'], df['Close'], df['Volume'])
-    df['ADX'] = ta.trend.adx(df['High'], df['Low'], df['Close'], window=14)
     df['RSI'] = ta.momentum.rsi(df['Close'])
     df['MACD'] = ta.trend.macd(df['Close'])
     df['ATR'] = ta.volatility.average_true_range(df['High'], df['Low'], df['Close'])
     df['OBV'] = ta.volume.on_balance_volume(df['Close'], df['Volume'])
+    df['ADX'] = ta.trend.adx(df['High'], df['Low'], df['Close'], window=14)
 
-    # Only these binary/categorical features will be used
+    # Add cross/binary features
     df['EMA9_Cross_21'] = (df['EMA9'] > df['EMA21']).astype(int)
     df['EMA12_Cross_26'] = (df['EMA12'] > df['EMA26']).astype(int)
     df['Above_VWAP'] = (df['Close'] > df['VWAP']).astype(int)
+
+    # New engineered features
+    df['Return_1'] = df['Close'].pct_change(1)
+    df['Return_3'] = df['Close'].pct_change(3)
+    df['BB_Width'] = ta.volatility.bollinger_wband(df['Close'])
+    df['Above_20SMA'] = (df['Close'] > df['Close'].rolling(20).mean()).astype(int)
+    df['Above_50SMA'] = (df['Close'] > df['Close'].rolling(50).mean()).astype(int)
+    df['Volume_Spike'] = (df['Volume'] > df['Volume'].rolling(20).mean() * 1.5).astype(int)
+    df['HourOfDay'] = df.index.hour
+    df['DayOfWeek'] = df.index.dayofweek
 
     # Use only these features for modeling
     features = FEATURES
     df.dropna(subset=features, inplace=True)  # drop if any of these features are NaN
     X = df[features]
-    X_indexed = X.copy()
 
     try:
         transformed = scaler.transform(X)
@@ -543,7 +555,7 @@ def get_data():
                 if j < 3:
                     padded_probs[i][j] = val
 
-        df = df.loc[X_indexed.index]
+        df = df.loc[X.index]
         df[['S0', 'S1', 'S2']] = padded_probs
         df['Prediction'] = model.predict(transformed)
 
@@ -556,6 +568,7 @@ def get_data():
 
     return df
 
+# ========== Live Mode ==========
 if mode == "Live":
     st.header("🟢 Live Mode")
 
