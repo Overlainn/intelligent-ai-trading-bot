@@ -350,7 +350,7 @@ def train_model():
     weight_dict = dict(zip(expected_classes, class_weights))
 
 # ============ Optuna Hyperparameter Tuning ============= #
-progress.progress(75, text="🧪 Hyperparameter tuning with Optuna...")
+    progress.progress(75, text="🧪 Hyperparameter tuning with Optuna...")
 
 def compute_winrates(y_true, y_pred):
     """Compute per-class winrates (TP/Total for each true class)."""
@@ -394,85 +394,85 @@ def objective(trial):
     return macro_f1
 
 # ---- RUN THE STUDY FIRST ----
-study = optuna.create_study(direction='maximize')
-study.optimize(objective, n_trials=30)  # << Increase n_trials for deeper tuning
+    study = optuna.create_study(direction='maximize')
+    study.optimize(objective, n_trials=30)  # << Increase n_trials for deeper tuning
 
 # ---- THEN SHOW THE LEADERBOARD ----
 # Extract metrics for leaderboard
-rows = []
-for t in study.trials:
-    row = {
-        "Trial": t.number,
-        "F1": t.user_attrs.get("f1"),
-        "Accuracy": t.user_attrs.get("accuracy"),
-        "Winrate_Short": t.user_attrs.get("winrate_0"),
-        "Winrate_Neutral": t.user_attrs.get("winrate_1"),
-        "Winrate_Long": t.user_attrs.get("winrate_2"),
-        **t.params
-    }
-    rows.append(row)
-leaderboard_df = pd.DataFrame(rows)
-leaderboard_df = leaderboard_df.sort_values("F1", ascending=False).head(10)
-st.subheader("Optuna Trial Leaderboard (Top 10)")
-st.dataframe(leaderboard_df)
+    rows = []
+    for t in study.trials:
+        row = {
+            "Trial": t.number,
+            "F1": t.user_attrs.get("f1"),
+            "Accuracy": t.user_attrs.get("accuracy"),
+            "Winrate_Short": t.user_attrs.get("winrate_0"),
+            "Winrate_Neutral": t.user_attrs.get("winrate_1"),
+            "Winrate_Long": t.user_attrs.get("winrate_2"),
+            **t.params
+        }
+        rows.append(row)
+    leaderboard_df = pd.DataFrame(rows)
+    leaderboard_df = leaderboard_df.sort_values("F1", ascending=False).head(10)
+    st.subheader("Optuna Trial Leaderboard (Top 10)")
+    st.dataframe(leaderboard_df)
 
-best_params = study.best_trial.params
-st.write("🏅 Best Hyperparameters:", best_params)
+    best_params = study.best_trial.params
+    st.write("🏅 Best Hyperparameters:", best_params)
 
-# Step 6: Train final model with tuned params
-progress.progress(85, text="🔧 Training XGBoost model (best params)...")
-model = XGBClassifier(**best_params, use_label_encoder=False, eval_metric='mlogloss', random_state=42)
-model.fit(X_train_scaled, y_train)
+    # Step 6: Train final model with tuned params
+    progress.progress(85, text="🔧 Training XGBoost model (best params)...")
+    model = XGBClassifier(**best_params, use_label_encoder=False, eval_metric='mlogloss', random_state=42)
+    model.fit(X_train_scaled, y_train)
 
-# --- Model Diagnostics ---
-st.subheader("🔍 Model Diagnostics")
-y_pred = model.predict(X_val_scaled)
+    # --- Model Diagnostics ---
+    st.subheader("🔍 Model Diagnostics")
+    y_pred = model.predict(X_val_scaled)
 
-unique = np.unique(np.concatenate([y_val, y_pred]))
-all_labels = [0, 1, 2]
-present_labels = sorted([label for label in all_labels if label in unique])
-all_names = ["Short", "Neutral", "Long"]
-present_names = [all_names[i] for i in present_labels]
+    unique = np.unique(np.concatenate([y_val, y_pred]))
+    all_labels = [0, 1, 2]
+    present_labels = sorted([label for label in all_labels if label in unique])
+    all_names = ["Short", "Neutral", "Long"]
+    present_names = [all_names[i] for i in present_labels]
 
-missing_labels = set(all_labels) - set(np.unique(y_val))
-if missing_labels:
-    st.warning(f"⚠️ Validation set is missing these classes: {missing_labels}")
+    missing_labels = set(all_labels) - set(np.unique(y_val))
+    if missing_labels:
+        st.warning(f"⚠️ Validation set is missing these classes: {missing_labels}")
 
-if len(present_labels) < 2:
-    st.warning("⚠️ Not enough classes in validation set for diagnostics (need at least 2). "
-               "Try increasing data window or adjusting thresholds.")
-else:
-    report = classification_report(
-        y_val, y_pred, labels=present_labels, target_names=present_names, zero_division=0
-    )
+    if len(present_labels) < 2:
+        st.warning("⚠️ Not enough classes in validation set for diagnostics (need at least 2). "
+                   "Try increasing data window or adjusting thresholds.")
+    else:
+        report = classification_report(
+            y_val, y_pred, labels=present_labels, target_names=present_names, zero_division=0
+        )
     st.code(report, language='text')
+    
+        cm = confusion_matrix(y_val, y_pred, labels=present_labels)
+        fig, ax = plt.subplots()
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                    xticklabels=present_names, yticklabels=present_names)
+        plt.xlabel("Predicted")
+        plt.ylabel("Actual")
+        plt.title("Confusion Matrix")
+        st.pyplot(fig)
 
-    cm = confusion_matrix(y_val, y_pred, labels=present_labels)
-    fig, ax = plt.subplots()
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
-                xticklabels=present_names, yticklabels=present_names)
-    plt.xlabel("Predicted")
-    plt.ylabel("Actual")
-    plt.title("Confusion Matrix")
-    st.pyplot(fig)
+    # Feature importances
+    importances = model.feature_importances_
+    st.subheader("🔑 XGBoost Feature Importances")
+    st.bar_chart(pd.Series(importances, index=FEATURES).sort_values(ascending=False))
 
-# Feature importances
-importances = model.feature_importances_
-st.subheader("🔑 XGBoost Feature Importances")
-st.bar_chart(pd.Series(importances, index=FEATURES).sort_values(ascending=False))
+    # Step 7: Save model + scaler
+    progress.progress(95, text="💾 Saving model + scaler to Drive...")
+    model_bytes = pickle.dumps((model, scaler))
+    upload_to_drive_stream(io.BytesIO(model_bytes), MODEL_FILE)
 
-# Step 7: Save model + scaler
-progress.progress(95, text="💾 Saving model + scaler to Drive...")
-model_bytes = pickle.dumps((model, scaler))
-upload_to_drive_stream(io.BytesIO(model_bytes), MODEL_FILE)
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    upload_to_drive_content(LAST_TRAIN_FILE, timestamp)
 
-timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-upload_to_drive_content(LAST_TRAIN_FILE, timestamp)
-
-progress.progress(100, text="✅ Training complete!")
-st.success("🎉 Model trained and uploaded!")
-
-return model, scaler
+    progress.progress(100, text="✅ Training complete!")
+    st.success("🎉 Model trained and uploaded!")
+    
+    return model, scaler
 
 # ========== Utility Functions ==========
 
