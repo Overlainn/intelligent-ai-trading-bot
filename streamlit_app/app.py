@@ -211,13 +211,20 @@ if time.time() - st.session_state.last_refresh > 60:
 
 # ========== Model Training ==========
 def train_model():
+    st.subheader("📚 Training Model")
+    progress = st.progress(0, text="Starting...")
+
+    # Step 1: Load Data
+    progress.progress(5, text="📥 Loading dataset...")
     df = load_or_fetch_data()
 
-    # 🔒 Ensure data file exists and is up-to-date
+    # Step 2: Save and sync raw file
     df.to_csv(DATA_FILE, index=False)
     upload_to_drive(DATA_FILE)
+    progress.progress(10, text="🔒 Backed up raw data to Drive...")
 
-    # Feature Engineering
+    # Step 3: Feature Engineering
+    progress.progress(20, text="🧠 Calculating technical indicators...")
     df['EMA9'] = ta.trend.ema_indicator(df['Close'], window=9)
     df['EMA21'] = ta.trend.ema_indicator(df['Close'], window=21)
     df['VWAP'] = ta.volume.volume_weighted_average_price(df['High'], df['Low'], df['Close'], df['Volume'])
@@ -230,42 +237,42 @@ def train_model():
     df['EMA12'] = ta.trend.ema_indicator(df['Close'], window=12)
     df['EMA26'] = ta.trend.ema_indicator(df['Close'], window=26)
 
-    # Crossover & Relative Features
     df['EMA12_Cross_26'] = (df['EMA12'] > df['EMA26']).astype(int)
     df['EMA9_Cross_21'] = (df['EMA9'] > df['EMA21']).astype(int)
     df['Above_VWAP'] = (df['Close'] > df['VWAP']).astype(int)
+    progress.progress(45, text="✅ Features engineered.")
 
-    # Target Engineering
+    # Step 4: Target Engineering
+    progress.progress(55, text="🎯 Generating labels...")
     df['Target'] = ((df['Close'].shift(-4) - df['Close']) / df['Close']).apply(
         lambda x: 2 if x > 0.0022 else (0 if x < -0.0022 else 1)
     )
-
     df.dropna(inplace=True)
 
-    # Feature/Target split
+    # Step 5: Prepare training set
     features = SHARED_FEATURES
     X = df[features]
     y = df['Target']
 
-    # ✅ Show class balance
     class_counts = y.value_counts(normalize=True)
     st.write("📊 Target class distribution:", class_counts)
 
     expected_classes = [0, 1, 2]
     actual_classes = sorted(y.unique())
     missing_classes = set(expected_classes) - set(actual_classes)
-
     if missing_classes:
         st.warning(f"⚠️ Missing classes in training data: {missing_classes}")
         return None, None
 
-    # ✅ Continue training
+    progress.progress(65, text="📦 Scaling features and computing class weights...")
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
     class_weights = compute_class_weight('balanced', classes=np.array(expected_classes), y=y)
     weight_dict = dict(zip(expected_classes, class_weights))
 
+    # Step 6: Train model
+    progress.progress(80, text="🔧 Training XGBoost model...")
     model = XGBClassifier(
         n_estimators=150,
         learning_rate=0.05,
@@ -278,13 +285,16 @@ def train_model():
     )
     model.fit(X_scaled, y)
 
-    # Save model to Drive
+    # Step 7: Save model + scaler
+    progress.progress(95, text="💾 Saving model + scaler to Drive...")
     model_bytes = pickle.dumps((model, scaler))
     upload_to_drive_stream(io.BytesIO(model_bytes), MODEL_FILE)
 
-    # Save training timestamp
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     upload_to_drive_content(LAST_TRAIN_FILE, timestamp)
+
+    progress.progress(100, text="✅ Training complete!")
+    st.success("🎉 Model trained and uploaded!")
 
     return model, scaler
   
@@ -306,61 +316,37 @@ def load_model_from_drive():
         return pickle.load(f)
 
 # ========== Local Training Functions ==========
-def get_training_data():
-    if os.path.exists(DATA_FILE):
-        df = pd.read_csv(DATA_FILE)
-
-        # ✅ Ensure Timestamp is a column and datetime
-        if 'Timestamp' not in df.columns and df.index.name == 'Timestamp':
-            df.reset_index(inplace=True)
-        if 'Timestamp' in df.columns:
-            df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
-
-        # ✅ Save cleaned version
-        df.to_csv(DATA_FILE, index=False)
-
-        # ✅ Feature Engineering
-        df['Target'] = ((df['Close'].shift(-4) - df['Close']) / df['Close']).apply(
-            lambda x: 2 if x > 0.0022 else (0 if x < -0.0022 else 1)
-        )
-        df.dropna(inplace=True)
-      # 📊 Show Target Class Distribution
-        st.subheader("📊 Target Class Distribution")
-        class_dist = df['Target'].value_counts(normalize=True).sort_index()
-        st.write(class_dist.apply(lambda x: f"{x:.2%}"))
-
-        return df
-
-    st.error(f"❌ Training data '{DATA_FILE}' not found.")
-    return pd.DataFrame()
-
 def load_model_and_scaler():
     """
-    Loads the model and scaler from local files if available and valid.
-    If they are missing or unreadable, it triggers training from scratch.
+    Loads the model and scaler from local pickle file if available.
+    Retrains from scratch if loading fails.
     """
-    if os.path.exists(MODEL_FILE) and os.path.exists(SCALER_FILE):
+    if os.path.exists(MODEL_FILE):
         try:
-            model = joblib.load(MODEL_FILE)
-            scaler = joblib.load(SCALER_FILE)
+            with open(MODEL_FILE, 'rb') as f:
+                model, scaler = pickle.load(f)
             return model, scaler
         except Exception as e:
-            st.warning(f"⚠️ Error loading local model/scaler: {e}")
-            st.info("🔁 Re-training model due to load error.")
+            st.warning(f"⚠️ Failed to load local model: {e}")
+            st.info("🔁 Re-training model...")
     return train_model()
 
 def load_model_from_drive():
+    """
+    Loads the model+scaler from Google Drive (via pickle).
+    If unavailable, trains from scratch.
+    """
     if not download_from_drive(MODEL_FILE):
-        st.error("❌ Failed to load model from Drive. Training new one.")
+        st.error("❌ Failed to download model from Drive. Training new one.")
         return train_model()
-    with open(MODEL_FILE, 'rb') as f:
-        return pickle.load(f)
 
-def load_scaler():
-    if not download_from_drive(SCALER_FILE):
-        st.error("❌ Failed to load scaler from Drive. Training new one.")
-        return train_model()[1]
-    return joblib.load(SCALER_FILE)
+    try:
+        with open(MODEL_FILE, 'rb') as f:
+            model, scaler = pickle.load(f)
+        return model, scaler
+    except Exception as e:
+        st.warning(f"⚠️ Error reading model file: {e}")
+        return train_model()
 
 # ✅ Load model/scaler at startup
 model, scaler = load_model_from_drive()
