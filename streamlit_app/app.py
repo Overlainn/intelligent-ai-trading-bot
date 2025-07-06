@@ -250,7 +250,7 @@ def train_model():
     # Step 4: Target Engineering
     progress.progress(55, text="🎯 Generating labels...")
     df['Target'] = ((df['Close'].shift(-4) - df['Close']) / df['Close']).apply(
-        lambda x: 2 if x > 0.0006 else (0 if x < -0.0006 else 1)
+        lambda x: 2 if x > 0.0004 else (0 if x < -0.0004 else 1)
     )
     df.dropna(inplace=True)
 
@@ -500,7 +500,7 @@ if mode == "Live":
         if row['Prediction'] == 2 and row['S2'] > 0.50:
             signal = 'Long'
             confidence = row['S2']
-        elif row['Prediction'] == 0 and row['S0'] > 0.55:
+        elif row['Prediction'] == 0 and row['S0'] > 0.50:
             signal = 'Short'
             confidence = row['S0']
         else:
