@@ -311,7 +311,7 @@ def train_model():
     progress.progress(55, text="🎯 Generating labels...")
     future_return = (df['Close'].shift(-4) - df['Close']) / df['Close']
     atr_threshold = 0.2 * df['ATR'] / df['Close']
-    static_threshold = 0.0015
+    static_threshold = 0.0010
     threshold = np.maximum(atr_threshold, static_threshold)
     df['Target'] = np.where(future_return > threshold, 2,
                             np.where(future_return < -threshold, 0, 1))
