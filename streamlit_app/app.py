@@ -14,7 +14,6 @@ import ta
 from xgboost import XGBClassifier
 
 SHARED_FEATURES = [
-    'EMA12_Cross_26',
     'EMA9_Cross_21',
     'Above_VWAP',
     'RSI',
@@ -246,7 +245,6 @@ def train_model():
     df['OBV'] = ta.volume.on_balance_volume(df['Close'], df['Volume'])
 
     # Only these will be used as model input:
-    df['EMA12_Cross_26'] = (df['EMA12'] > df['EMA26']).astype(int)
     df['EMA9_Cross_21'] = (df['EMA9'] > df['EMA21']).astype(int)
     df['Above_VWAP'] = (df['Close'] > df['VWAP']).astype(int)
     progress.progress(45, text="✅ Features engineered.")
@@ -260,7 +258,6 @@ def train_model():
 
     # Step 5: Prepare training set — ONLY these features
     features = [
-        'EMA12_Cross_26',
         'EMA9_Cross_21',
         'Above_VWAP',
         'RSI',
@@ -436,7 +433,6 @@ def get_data():
     df['OBV'] = ta.volume.on_balance_volume(df['Close'], df['Volume'])
 
     # Only these binary/categorical features will be used
-    df['EMA12_Cross_26'] = (df['EMA12'] > df['EMA26']).astype(int)
     df['EMA9_Cross_21'] = (df['EMA9'] > df['EMA21']).astype(int)
     df['Above_VWAP'] = (df['Close'] > df['VWAP']).astype(int)
 
