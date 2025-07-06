@@ -17,6 +17,7 @@ SHARED_FEATURES = [
     'EMA9_Cross_21',
     'Above_VWAP',
     'RSI',
+    'ADX', 
     'MACD',
     'ATR',
     'OBV']
@@ -243,6 +244,8 @@ def train_model():
     df['MACD'] = ta.trend.macd(df['Close'])
     df['ATR'] = ta.volatility.average_true_range(df['High'], df['Low'], df['Close'])
     df['OBV'] = ta.volume.on_balance_volume(df['Close'], df['Volume'])
+    df['ADX'] = ta.trend.adx(df['High'], df['Low'], df['Close'], window=14)
+
 
     # Only these will be used as model input:
     df['EMA9_Cross_21'] = (df['EMA9'] > df['EMA21']).astype(int)
