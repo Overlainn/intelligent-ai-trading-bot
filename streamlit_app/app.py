@@ -135,30 +135,61 @@ def fetch_paginated_ohlcv(symbol='BTC/USDT', timeframe='15m', days=90):
 
 
 def load_or_fetch_data():
+    trained_flag = "trained_once.flag"
+
+    # Check if we already trained on BTC_4_Candle.csv
+    def trained_before():
+        return os.path.exists(trained_flag) or download_from_drive(trained_flag)
+
+    if not trained_before():
+        # 🔁 First-time training from BTC_4_Candle.csv
+        if not download_from_drive("BTC_4_Candle.csv"):
+            st.error("❌ Could not find BTC_4_Candle.csv on Google Drive.")
+            return pd.DataFrame()
+        try:
+            df = pd.read_csv("BTC_4_Candle.csv")
+            if "Timestamp" not in df.columns:
+                st.error("❌ 'Timestamp' column missing in BTC_4_Candle.csv.")
+                return pd.DataFrame()
+            df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
+        except Exception as e:
+            st.error(f"❌ Failed to read BTC_4_Candle.csv: {e}")
+            return pd.DataFrame()
+
+        # ✅ Save local copy to keep consistent with the rest of app
+        df.to_csv(DATA_FILE, index=False)
+        upload_to_drive(DATA_FILE)
+
+        # ✅ Create flag file so we never use BTC_4_Candle.csv again
+        with open(trained_flag, 'w') as f:
+            f.write("trained")
+        upload_to_drive(trained_flag)
+
+        return df
+
+    # ✅ From now on: use local btc_data.csv or fetch online if missing
     if os.path.exists(DATA_FILE):
         df = pd.read_csv(DATA_FILE)
-
-        # ✅ Ensure Timestamp column exists and is datetime
-        if 'Timestamp' in df.columns:
-            df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
+        if "Timestamp" in df.columns:
+            df["Timestamp"] = pd.to_datetime(df["Timestamp"], errors="coerce")
+            return df
         else:
             st.error("❌ 'Timestamp' column missing in local CSV.")
             return pd.DataFrame()
-        return df
 
-    # 🔁 If local file doesn't exist, try downloading or fetch fresh
+    # 🔁 No local data file, try fetching online
     if not download_from_drive(DATA_FILE):
         df = fetch_paginated_ohlcv()
-        df.reset_index(inplace=True)  # Converts index back to Timestamp column
-        df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
+        df.reset_index(inplace=True)
+        df["Timestamp"] = pd.to_datetime(df["Timestamp"], errors="coerce")
         df.to_csv(DATA_FILE, index=False)
         upload_to_drive(DATA_FILE)
         return df
 
-    # If it was downloaded successfully above
+    # ✅ File downloaded from Drive
     df = pd.read_csv(DATA_FILE)
-    if 'Timestamp' in df.columns:
-        df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
+    if "Timestamp" in df.columns:
+        df["Timestamp"] = pd.to_datetime(df["Timestamp"], errors="coerce")
     return df
 
 # ========== Push Notifications ==========
@@ -205,9 +236,9 @@ def train_model():
     df['Above_VWAP'] = (df['Close'] > df['VWAP']).astype(int)
 
     # Target Engineering
-    df['Future_Close'] = df['Close'].shift(-6)
-    df['Pct_Change'] = (df['Future_Close'] - df['Close']) / df['Close']
-    df['Target'] = df['Pct_Change'].apply(lambda x: 2 if x > 0.0022 else (0 if x < -0.0022 else 1))
+    df['Target'] = ((df['Close'].shift(-4) - df['Close']) / df['Close']).apply(
+        lambda x: 2 if x > 0.0022 else (0 if x < -0.0022 else 1)
+    )
 
     df.dropna(inplace=True)
 
