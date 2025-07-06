@@ -254,7 +254,7 @@ def train_model():
     # Step 4: Target Engineering
     progress.progress(55, text="🎯 Generating labels...")
     df['Target'] = ((df['Close'].shift(-4) - df['Close']) / df['Close']).apply(
-        lambda x: 2 if x > 0.0004 else (0 if x < -0.0004 else 1)
+        lambda x: 2 if x > 0.0003 else (0 if x < -0.0003 else 1)
     )
     df.dropna(inplace=True)
 
