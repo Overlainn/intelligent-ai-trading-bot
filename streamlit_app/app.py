@@ -9,6 +9,10 @@ from streamlit_autorefresh import st_autorefresh
 from sklearn.model_selection import train_test_split
 from sklearn.utils.multiclass import unique_labels
 from sklearn.metrics import classification_report, confusion_matrix
+import optuna
+from sklearn.metrics import f1_score, classification_report, confusion_matrix
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 # Data and ML
 import pandas as pd
@@ -270,7 +274,7 @@ def train_model():
     upload_to_drive(DATA_FILE)
     progress.progress(10, text="🔒 Backed up raw data to Drive...")
 
-    # Step 3: Feature Engineering — classic indicators
+    # Step 3: Feature Engineering
     progress.progress(20, text="🧠 Calculating technical indicators...")
     df['EMA12'] = ta.trend.ema_indicator(df['Close'], window=12)
     df['EMA26'] = ta.trend.ema_indicator(df['Close'], window=26)
@@ -292,7 +296,7 @@ def train_model():
     df['EMA12_Cross_26'] = (df['EMA12'] > df['EMA26']).astype(int)
     df['Above_VWAP'] = (df['Close'] > df['VWAP']).astype(int)
 
-    # Step 3c: Feature Engineering — advanced/new features
+    # Step 3c: Advanced/new features
     df['Return_1'] = df['Close'].pct_change(1)
     df['Return_3'] = df['Close'].pct_change(3)
     df['BB_Width'] = ta.volatility.bollinger_wband(df['Close'])
@@ -304,7 +308,7 @@ def train_model():
 
     st.write("Rows before dropna:", len(df))
 
-    # Step 4: Target Engineering (ATR-based thresholds, less noise!)
+    # Step 4: Target Engineering (ATR-based thresholds)
     progress.progress(55, text="🎯 Generating labels...")
     future_return = (df['Close'].shift(-4) - df['Close']) / df['Close']
     atr_threshold = 0.2 * df['ATR'] / df['Close']
@@ -317,7 +321,7 @@ def train_model():
     df.dropna(subset=FEATURES + ['Target'], inplace=True)
     st.write("Rows after dropna (final training set):", len(df))
 
-    # Step 5: Prepare training set — ONLY these features
+    # Step 5: Prepare training set
     features = FEATURES
     X = df[features]
     y = df['Target']
@@ -344,20 +348,48 @@ def train_model():
     class_weights = compute_class_weight('balanced', classes=np.array(expected_classes), y=y_train)
     weight_dict = dict(zip(expected_classes, class_weights))
 
-    # Step 6: Train model
-    progress.progress(80, text="🔧 Training XGBoost model...")
-    model = XGBClassifier(
-        n_estimators=150,
-        learning_rate=0.08155530081933904,
-        max_depth=8,
-        subsample=0.8225853585276496,
-        colsample_bytree=0.7568432811752354,
-        reg_lambda=3.637306054328782,
-        reg_alpha=0.0721387326567655,
-        use_label_encoder=False,
-        eval_metric='mlogloss',
-        random_state=42
-    )
+    # ============ Optuna Hyperparameter Tuning ============= #
+    progress.progress(75, text="🧪 Hyperparameter tuning with Optuna...")
+
+    def objective(trial):
+        params = {
+            'n_estimators': trial.suggest_int('n_estimators', 50, 250),
+            'max_depth': trial.suggest_int('max_depth', 3, 10),
+            'learning_rate': trial.suggest_loguniform('learning_rate', 1e-4, 0.2),
+            'subsample': trial.suggest_uniform('subsample', 0.5, 1.0),
+            'colsample_bytree': trial.suggest_uniform('colsample_bytree', 0.4, 1.0),
+            'reg_lambda': trial.suggest_loguniform('reg_lambda', 1e-3, 10),
+            'reg_alpha': trial.suggest_loguniform('reg_alpha', 1e-4, 1.0),
+            'use_label_encoder': False,
+            'eval_metric': 'mlogloss',
+            'random_state': 42,
+        }
+        model = XGBClassifier(**params)
+        model.fit(
+            X_train_scaled, y_train,
+            eval_set=[(X_val_scaled, y_val)],
+            early_stopping_rounds=15,
+            verbose=False
+        )
+        preds = model.predict(X_val_scaled)
+        score = f1_score(y_val, preds, average='macro')
+        return score
+
+    # ---- RUN THE STUDY FIRST ----
+    study = optuna.create_study(direction='maximize')
+    study.optimize(objective, n_trials=30)  # << Increase n_trials for deeper tuning
+
+    # ---- THEN SHOW THE LEADERBOARD ----
+    trials_df = study.trials_dataframe(attrs=("number", "value", "params", "datetime_start"))
+    st.subheader("Optuna Trial Leaderboard (Top 10)")
+    st.dataframe(trials_df.sort_values("value", ascending=False).head(10))
+
+    best_params = study.best_trial.params
+    st.write("🏅 Best Hyperparameters:", best_params)
+
+    # Step 6: Train final model with tuned params
+    progress.progress(85, text="🔧 Training XGBoost model (best params)...")
+    model = XGBClassifier(**best_params, use_label_encoder=False, eval_metric='mlogloss', random_state=42)
     model.fit(X_train_scaled, y_train)
 
     # --- Model Diagnostics ---
@@ -379,13 +411,11 @@ def train_model():
         st.warning("⚠️ Not enough classes in validation set for diagnostics (need at least 2). "
                    "Try increasing data window or adjusting thresholds.")
     else:
-        # Classification report
         report = classification_report(
             y_val, y_pred, labels=present_labels, target_names=present_names, zero_division=0
         )
         st.code(report, language='text')
 
-        # Confusion matrix
         cm = confusion_matrix(y_val, y_pred, labels=present_labels)
         fig, ax = plt.subplots()
         sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
@@ -395,11 +425,10 @@ def train_model():
         plt.title("Confusion Matrix")
         st.pyplot(fig)
 
-    # 3. Feature importances (always safe)
+    # Feature importances
     importances = model.feature_importances_
     st.subheader("🔑 XGBoost Feature Importances")
     st.bar_chart(pd.Series(importances, index=FEATURES).sort_values(ascending=False))
-
 
     # Step 7: Save model + scaler
     progress.progress(95, text="💾 Saving model + scaler to Drive...")
