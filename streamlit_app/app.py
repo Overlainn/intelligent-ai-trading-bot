@@ -255,7 +255,7 @@ def train_model():
     # Step 1: Load Data
     progress.progress(5, text="📥 Loading dataset...")
     df = load_or_fetch_data()
-    df = df.tail(35000)
+    df = df.tail(44000)
     st.write(f"Training on {len(df)} most recent rows.")
 
     # Step 2: Save and sync raw file
