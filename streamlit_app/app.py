@@ -357,38 +357,41 @@ def train_model():
 
     y_pred = model.predict(X_val_scaled)
 
-    # --- Handle missing classes safely ---
     unique = np.unique(np.concatenate([y_val, y_pred]))
     all_labels = [0, 1, 2]
     present_labels = sorted([label for label in all_labels if label in unique])
     all_names = ["Short", "Neutral", "Long"]
     present_names = [all_names[i] for i in present_labels]
     
-    # Warn if missing labels
     missing_labels = set(all_labels) - set(np.unique(y_val))
     if missing_labels:
         st.warning(f"⚠️ Validation set is missing these classes: {missing_labels}")
+    
+    if len(present_labels) < 2:
+        st.warning("⚠️ Not enough classes in validation set for diagnostics (need at least 2). "
+                   "Try increasing data window or adjusting thresholds.")
+    else:
+        # Classification report
+        report = classification_report(
+            y_val, y_pred, labels=present_labels, target_names=present_names, zero_division=0
+        )
+        st.code(report, language='text')
 
-    # Classification report
-    report = classification_report(
-    y_val, y_pred, labels=present_labels, target_names=present_names, zero_division=0
-    )
-    st.code(report, language='text')
+        # Confusion matrix
+        cm = confusion_matrix(y_val, y_pred, labels=present_labels)
+        fig, ax = plt.subplots()
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                    xticklabels=present_names, yticklabels=present_names)
+        plt.xlabel("Predicted")
+        plt.ylabel("Actual")
+        plt.title("Confusion Matrix")
+        st.pyplot(fig)
 
-    # Confusion matrix
-    cm = confusion_matrix(y_val, y_pred, labels=present_labels)
-    fig, ax = plt.subplots()
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
-                xticklabels=present_names, yticklabels=present_names)
-    plt.xlabel("Predicted")
-    plt.ylabel("Actual")
-    plt.title("Confusion Matrix")
-    st.pyplot(fig)
-
-    # 3. Feature importances
+    # 3. Feature importances (always safe)
     importances = model.feature_importances_
     st.subheader("🔑 XGBoost Feature Importances")
     st.bar_chart(pd.Series(importances, index=FEATURES).sort_values(ascending=False))
+
 
     # Step 7: Save model + scaler
     progress.progress(95, text="💾 Saving model + scaler to Drive...")
