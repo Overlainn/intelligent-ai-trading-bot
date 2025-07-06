@@ -264,6 +264,7 @@ def train_model():
         'EMA9_Cross_21',
         'Above_VWAP',
         'RSI',
+        'ADX',
         'MACD',
         'ATR',
         'OBV'
