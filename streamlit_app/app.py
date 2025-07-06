@@ -7,6 +7,7 @@ import time, io, pickle, requests
 from datetime import datetime, date, timedelta
 from streamlit_autorefresh import st_autorefresh
 from sklearn.model_selection import train_test_split
+from sklearn.utils.multiclass import unique_labels
 
 # Data and ML
 import pandas as pd
