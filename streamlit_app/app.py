@@ -8,6 +8,7 @@ from datetime import datetime, date, timedelta
 from streamlit_autorefresh import st_autorefresh
 from sklearn.model_selection import train_test_split
 from sklearn.utils.multiclass import unique_labels
+from sklearn.metrics import classification_report, confusion_matrix
 
 # Data and ML
 import pandas as pd
