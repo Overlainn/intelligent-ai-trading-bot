@@ -353,7 +353,7 @@ def train_model():
 progress.progress(75, text="🧪 Hyperparameter tuning with Optuna...")
 
 def compute_winrates(y_true, y_pred):
-    # Winrate (accuracy) per class: TP/Total for each true class
+    """Compute per-class winrates (TP/Total for each true class)."""
     results = {}
     for cls in [0, 1, 2]:
         mask = (y_true == cls)
