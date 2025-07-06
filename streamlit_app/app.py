@@ -512,10 +512,10 @@ if mode == "Live":
     for idx, row in df.iterrows():
         signal = None
         confidence = 0
-        if row['Prediction'] == 2 and row['S2'] > 0.55:
+        if row['Prediction'] == 2 and row['S2'] > 0.60:
             signal = 'Long'
             confidence = row['S2']
-        elif row['Prediction'] == 0 and row['S0'] > 0.50:
+        elif row['Prediction'] == 0 and row['S0'] > 0.60:
             signal = 'Short'
             confidence = row['S0']
         else:
@@ -539,8 +539,8 @@ if mode == "Live":
     fig.add_trace(go.Scatter(x=df.index, y=df['Close'], name='Price', line=dict(color='lightblue')))
 
     # ✅ Plot current signals (from this model run)
-    long_signals = df[(df['Prediction'] == 2) & (df['S2'] > 0.55)]
-    short_signals = df[(df['Prediction'] == 0) & (df['S0'] > 0.50)]
+    long_signals = df[(df['Prediction'] == 2) & (df['S2'] > 0.60)]
+    short_signals = df[(df['Prediction'] == 0) & (df['S0'] > 0.60)]
 
     fig.add_trace(go.Scatter(
         x=long_signals.index,
@@ -608,8 +608,8 @@ elif mode == "Backtest":
 
             # === ENTRY LOGIC ===
             if in_position is None:
-                valid_long = row['Prediction'] == 2 and row['S2'] > 0.55
-                valid_short = row['Prediction'] == 0 and row['S0'] > 0.50
+                valid_long = row['Prediction'] == 2 and row['S2'] > 0.60
+                valid_short = row['Prediction'] == 0 and row['S0'] > 0.60
 
                 if valid_long and passes_itb:
                     in_position = "LONG"
@@ -620,7 +620,7 @@ elif mode == "Backtest":
 
             # === EXIT LOGIC ===
             elif in_position == "LONG":
-                valid_exit = row['Prediction'] == 0 and row['S0'] > 0.50
+                valid_exit = row['Prediction'] == 0 and row['S0'] > 0.60
                 if valid_exit:
                     trades.append({
                         "Entry Time": entry_time,
@@ -636,7 +636,7 @@ elif mode == "Backtest":
                     in_position = None
 
             elif in_position == "SHORT":
-                valid_exit = row['Prediction'] == 2 and row['S2'] > 0.55
+                valid_exit = row['Prediction'] == 2 and row['S2'] > 0.60
                 if valid_exit:
                     trades.append({
                         "Entry Time": entry_time,
@@ -695,8 +695,8 @@ elif mode == "Backtest":
             ))
 
     # ✅ Add Model Signal Markers
-    signal_longs = df[(df['Prediction'] == 2) & (df['S2'] > 0.55)]
-    signal_shorts = df[(df['Prediction'] == 0) & (df['S0'] > 0.50)]
+    signal_longs = df[(df['Prediction'] == 2) & (df['S2'] > 0.60)]
+    signal_shorts = df[(df['Prediction'] == 0) & (df['S0'] > 0.60)]
 
     fig.add_trace(go.Scatter(
         x=signal_longs.index,
