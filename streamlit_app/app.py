@@ -13,6 +13,7 @@ import optuna
 from sklearn.metrics import f1_score, classification_report, confusion_matrix
 import seaborn as sns
 import matplotlib.pyplot as plt
+from sklearn.metrics import f1_score, accuracy_score
 
 # Data and ML
 import pandas as pd
@@ -348,99 +349,130 @@ def train_model():
     class_weights = compute_class_weight('balanced', classes=np.array(expected_classes), y=y_train)
     weight_dict = dict(zip(expected_classes, class_weights))
 
-    # ============ Optuna Hyperparameter Tuning ============= #
-    progress.progress(75, text="🧪 Hyperparameter tuning with Optuna...")
+# ============ Optuna Hyperparameter Tuning ============= #
+progress.progress(75, text="🧪 Hyperparameter tuning with Optuna...")
 
-    def objective(trial):
-        params = {
-            'n_estimators': trial.suggest_int('n_estimators', 50, 250),
-            'max_depth': trial.suggest_int('max_depth', 3, 10),
-            'learning_rate': trial.suggest_loguniform('learning_rate', 1e-4, 0.2),
-            'subsample': trial.suggest_uniform('subsample', 0.5, 1.0),
-            'colsample_bytree': trial.suggest_uniform('colsample_bytree', 0.4, 1.0),
-            'reg_lambda': trial.suggest_loguniform('reg_lambda', 1e-3, 10),
-            'reg_alpha': trial.suggest_loguniform('reg_alpha', 1e-4, 1.0),
-            'use_label_encoder': False,
-            'eval_metric': 'mlogloss',
-            'random_state': 42,
-        }
-        model = XGBClassifier(**params)
-        model.fit(
-            X_train_scaled, y_train,
-            eval_set=[(X_val_scaled, y_val)],
-            verbose=False
-        )
-        preds = model.predict(X_val_scaled)
-        score = f1_score(y_val, preds, average='macro')
-        return score
+def compute_winrates(y_true, y_pred):
+    # Winrate (accuracy) per class: TP/Total for each true class
+    results = {}
+    for cls in [0, 1, 2]:
+        mask = (y_true == cls)
+        total = mask.sum()
+        correct = (y_pred[mask] == cls).sum() if total > 0 else 0
+        results[f"winrate_{cls}"] = correct / total if total > 0 else np.nan
+    return results
 
-    # ---- RUN THE STUDY FIRST ----
-    study = optuna.create_study(direction='maximize')
-    study.optimize(objective, n_trials=30)  # << Increase n_trials for deeper tuning
+def objective(trial):
+    params = {
+        'n_estimators': trial.suggest_int('n_estimators', 50, 250),
+        'max_depth': trial.suggest_int('max_depth', 3, 10),
+        'learning_rate': trial.suggest_float('learning_rate', 1e-4, 0.2, log=True),
+        'subsample': trial.suggest_float('subsample', 0.5, 1.0),
+        'colsample_bytree': trial.suggest_float('colsample_bytree', 0.4, 1.0),
+        'reg_lambda': trial.suggest_float('reg_lambda', 1e-3, 10, log=True),
+        'reg_alpha': trial.suggest_float('reg_alpha', 1e-4, 1.0, log=True),
+        'use_label_encoder': False,
+        'eval_metric': 'mlogloss',
+        'random_state': 42,
+    }
+    model = XGBClassifier(**params)
+    model.fit(
+        X_train_scaled, y_train,
+        eval_set=[(X_val_scaled, y_val)],
+        verbose=False
+    )
+    preds = model.predict(X_val_scaled)
+    macro_f1 = f1_score(y_val, preds, average='macro')
+    accuracy = accuracy_score(y_val, preds)
+    winrates = compute_winrates(y_val.values, preds)
+    # Save all metrics in user_attrs for leaderboard
+    trial.set_user_attr("f1", macro_f1)
+    trial.set_user_attr("accuracy", accuracy)
+    trial.set_user_attr("winrate_0", winrates["winrate_0"])
+    trial.set_user_attr("winrate_1", winrates["winrate_1"])
+    trial.set_user_attr("winrate_2", winrates["winrate_2"])
+    return macro_f1
 
-    # ---- THEN SHOW THE LEADERBOARD ----
-    trials_df = study.trials_dataframe(attrs=("number", "value", "params", "datetime_start"))
-    st.subheader("Optuna Trial Leaderboard (Top 10)")
-    st.dataframe(trials_df.sort_values("value", ascending=False).head(10))
+# ---- RUN THE STUDY FIRST ----
+study = optuna.create_study(direction='maximize')
+study.optimize(objective, n_trials=30)  # << Increase n_trials for deeper tuning
 
-    best_params = study.best_trial.params
-    st.write("🏅 Best Hyperparameters:", best_params)
+# ---- THEN SHOW THE LEADERBOARD ----
+# Extract metrics for leaderboard
+rows = []
+for t in study.trials:
+    row = {
+        "Trial": t.number,
+        "F1": t.user_attrs.get("f1"),
+        "Accuracy": t.user_attrs.get("accuracy"),
+        "Winrate_Short": t.user_attrs.get("winrate_0"),
+        "Winrate_Neutral": t.user_attrs.get("winrate_1"),
+        "Winrate_Long": t.user_attrs.get("winrate_2"),
+        **t.params
+    }
+    rows.append(row)
+leaderboard_df = pd.DataFrame(rows)
+leaderboard_df = leaderboard_df.sort_values("F1", ascending=False).head(10)
+st.subheader("Optuna Trial Leaderboard (Top 10)")
+st.dataframe(leaderboard_df)
 
-    # Step 6: Train final model with tuned params
-    progress.progress(85, text="🔧 Training XGBoost model (best params)...")
-    model = XGBClassifier(**best_params, use_label_encoder=False, eval_metric='mlogloss', random_state=42)
-    model.fit(X_train_scaled, y_train)
+best_params = study.best_trial.params
+st.write("🏅 Best Hyperparameters:", best_params)
 
-    # --- Model Diagnostics ---
-    st.subheader("🔍 Model Diagnostics")
+# Step 6: Train final model with tuned params
+progress.progress(85, text="🔧 Training XGBoost model (best params)...")
+model = XGBClassifier(**best_params, use_label_encoder=False, eval_metric='mlogloss', random_state=42)
+model.fit(X_train_scaled, y_train)
 
-    y_pred = model.predict(X_val_scaled)
+# --- Model Diagnostics ---
+st.subheader("🔍 Model Diagnostics")
+y_pred = model.predict(X_val_scaled)
 
-    unique = np.unique(np.concatenate([y_val, y_pred]))
-    all_labels = [0, 1, 2]
-    present_labels = sorted([label for label in all_labels if label in unique])
-    all_names = ["Short", "Neutral", "Long"]
-    present_names = [all_names[i] for i in present_labels]
-    
-    missing_labels = set(all_labels) - set(np.unique(y_val))
-    if missing_labels:
-        st.warning(f"⚠️ Validation set is missing these classes: {missing_labels}")
-    
-    if len(present_labels) < 2:
-        st.warning("⚠️ Not enough classes in validation set for diagnostics (need at least 2). "
-                   "Try increasing data window or adjusting thresholds.")
-    else:
-        report = classification_report(
-            y_val, y_pred, labels=present_labels, target_names=present_names, zero_division=0
-        )
-        st.code(report, language='text')
+unique = np.unique(np.concatenate([y_val, y_pred]))
+all_labels = [0, 1, 2]
+present_labels = sorted([label for label in all_labels if label in unique])
+all_names = ["Short", "Neutral", "Long"]
+present_names = [all_names[i] for i in present_labels]
 
-        cm = confusion_matrix(y_val, y_pred, labels=present_labels)
-        fig, ax = plt.subplots()
-        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
-                    xticklabels=present_names, yticklabels=present_names)
-        plt.xlabel("Predicted")
-        plt.ylabel("Actual")
-        plt.title("Confusion Matrix")
-        st.pyplot(fig)
+missing_labels = set(all_labels) - set(np.unique(y_val))
+if missing_labels:
+    st.warning(f"⚠️ Validation set is missing these classes: {missing_labels}")
 
-    # Feature importances
-    importances = model.feature_importances_
-    st.subheader("🔑 XGBoost Feature Importances")
-    st.bar_chart(pd.Series(importances, index=FEATURES).sort_values(ascending=False))
+if len(present_labels) < 2:
+    st.warning("⚠️ Not enough classes in validation set for diagnostics (need at least 2). "
+               "Try increasing data window or adjusting thresholds.")
+else:
+    report = classification_report(
+        y_val, y_pred, labels=present_labels, target_names=present_names, zero_division=0
+    )
+    st.code(report, language='text')
 
-    # Step 7: Save model + scaler
-    progress.progress(95, text="💾 Saving model + scaler to Drive...")
-    model_bytes = pickle.dumps((model, scaler))
-    upload_to_drive_stream(io.BytesIO(model_bytes), MODEL_FILE)
+    cm = confusion_matrix(y_val, y_pred, labels=present_labels)
+    fig, ax = plt.subplots()
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                xticklabels=present_names, yticklabels=present_names)
+    plt.xlabel("Predicted")
+    plt.ylabel("Actual")
+    plt.title("Confusion Matrix")
+    st.pyplot(fig)
 
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    upload_to_drive_content(LAST_TRAIN_FILE, timestamp)
+# Feature importances
+importances = model.feature_importances_
+st.subheader("🔑 XGBoost Feature Importances")
+st.bar_chart(pd.Series(importances, index=FEATURES).sort_values(ascending=False))
 
-    progress.progress(100, text="✅ Training complete!")
-    st.success("🎉 Model trained and uploaded!")
+# Step 7: Save model + scaler
+progress.progress(95, text="💾 Saving model + scaler to Drive...")
+model_bytes = pickle.dumps((model, scaler))
+upload_to_drive_stream(io.BytesIO(model_bytes), MODEL_FILE)
 
-    return model, scaler
+timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+upload_to_drive_content(LAST_TRAIN_FILE, timestamp)
+
+progress.progress(100, text="✅ Training complete!")
+st.success("🎉 Model trained and uploaded!")
+
+return model, scaler
 
 # ========== Utility Functions ==========
 
