@@ -15,6 +15,7 @@ from xgboost import XGBClassifier
 
 SHARED_FEATURES = [
     'EMA9_Cross_21',
+    'EMA12_Cross_26',
     'Above_VWAP',
     'RSI',
     'ADX', 
@@ -249,6 +250,7 @@ def train_model():
 
     # Only these will be used as model input:
     df['EMA9_Cross_21'] = (df['EMA9'] > df['EMA21']).astype(int)
+    df['EMA12_Cross_26'] = (df['EMA12'] > df['EMA26']).astype(int)
     df['Above_VWAP'] = (df['Close'] > df['VWAP']).astype(int)
     progress.progress(45, text="✅ Features engineered.")
 
@@ -262,6 +264,7 @@ def train_model():
     # Step 5: Prepare training set — ONLY these features
     features = [
         'EMA9_Cross_21',
+        'EMA12_Cross_26',
         'Above_VWAP',
         'RSI',
         'ADX',
@@ -443,6 +446,7 @@ def get_data():
 
     # Only these binary/categorical features will be used
     df['EMA9_Cross_21'] = (df['EMA9'] > df['EMA21']).astype(int)
+    df['EMA12_Cross_26'] = (df['EMA12'] > df['EMA26']).astype(int)
     df['Above_VWAP'] = (df['Close'] > df['VWAP']).astype(int)
 
     # Use only these features for modeling
@@ -531,9 +535,6 @@ if mode == "Live":
     # ========== Plot Price + Indicators ==========
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df.index, y=df['Close'], name='Price', line=dict(color='lightblue')))
-    fig.add_trace(go.Scatter(x=df.index, y=df['EMA9'], name='EMA9', line=dict(color='blue')))
-    fig.add_trace(go.Scatter(x=df.index, y=df['EMA21'], name='EMA21', line=dict(color='orange')))
-    fig.add_trace(go.Scatter(x=df.index, y=df['VWAP'], name='VWAP', line=dict(color='red')))
 
     # ✅ Plot current signals (from this model run)
     long_signals = df[(df['Prediction'] == 2) & (df['S2'] > 0.55)]
