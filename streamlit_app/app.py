@@ -257,11 +257,13 @@ def train_model():
     st.subheader("📚 Training Model")
     progress = st.progress(0, text="Starting...")
 
-    # Step 1: Load Data
-    progress.progress(5, text="📥 Loading dataset...")
-    df = load_or_fetch_data()
-    df = df.tail(44000)
-    st.write(f"Training on {len(df)} most recent rows.")
+    # Step 1: Load Data (LOAD EXTRA ROWS to survive dropna)
+    EXTRA = 60  # Covers warmup for rolling/EMA/etc.
+    RAW_ROWS = 44000 + EXTRA
+    raw_df = load_or_fetch_data()
+    st.write("Raw rows loaded from source:", len(raw_df))
+    df = raw_df.tail(RAW_ROWS)
+    st.write("Rows after tail(RAW_ROWS):", len(df))
 
     # Step 2: Save and sync raw file
     df.to_csv(DATA_FILE, index=False)
@@ -280,6 +282,7 @@ def train_model():
     df['ATR'] = ta.volatility.average_true_range(df['High'], df['Low'], df['Close'])
     df['OBV'] = ta.volume.on_balance_volume(df['Close'], df['Volume'])
     df['ADX'] = ta.trend.adx(df['High'], df['Low'], df['Close'], window=14)
+    st.write("Rows after feature engineering:", len(df))
 
     # Ensure timestamp is datetime
     df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
@@ -299,6 +302,8 @@ def train_model():
     df['HourOfDay'] = df['Timestamp'].dt.hour
     df['DayOfWeek'] = df['Timestamp'].dt.dayofweek
 
+    st.write("Rows before dropna:", len(df))
+
     # Step 4: Target Engineering (ATR-based thresholds, less noise!)
     progress.progress(55, text="🎯 Generating labels...")
     future_return = (df['Close'].shift(-4) - df['Close']) / df['Close']
@@ -308,10 +313,9 @@ def train_model():
     df['Target'] = np.where(future_return > threshold, 2,
                     np.where(future_return < -threshold, 0, 1))
 
-    st.write("New target class distribution:", df['Target'].value_counts(normalize=True))
-
     # Drop rows with NaNs in features or target
     df.dropna(subset=FEATURES + ['Target'], inplace=True)
+    st.write("Rows after dropna (final training set):", len(df))
 
     # Step 5: Prepare training set — ONLY these features
     features = FEATURES
