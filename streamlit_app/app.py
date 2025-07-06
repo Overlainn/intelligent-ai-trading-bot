@@ -306,10 +306,12 @@ def train_model():
     progress.progress(80, text="🔧 Training XGBoost model...")
     model = XGBClassifier(
         n_estimators=150,
-        learning_rate=0.05,
-        max_depth=5,
-        subsample=0.8,
-        colsample_bytree=0.8,
+        learning_rate=0.08155530081933904,
+        max_depth=8,
+        subsample=0.8225853585276496,
+        colsample_bytree=0.7568432811752354,
+        reg_lambda=3.637306054328782,  # 'lambda' becomes 'reg_lambda' in XGBClassifier
+        reg_alpha=0.0721387326567655,  # 'alpha' becomes 'reg_alpha'
         use_label_encoder=False,
         eval_metric='mlogloss',
         random_state=42
