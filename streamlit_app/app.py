@@ -13,8 +13,14 @@ import numpy as np
 import ta
 from xgboost import XGBClassifier
 
-SHARED_FEATURES = ['EMA9', 'EMA21', 'VWAP', 'RSI', 'MACD', 'MACD_Signal',
-                   'ATR', 'ROC', 'OBV', 'EMA12_Cross_26', 'EMA9_Cross_21', 'Above_VWAP']
+SHARED_FEATURES = [
+    'EMA12_Cross_26',
+    'EMA9_Cross_21',
+    'Above_VWAP',
+    'RSI',
+    'MACD',
+    'ATR',
+    'OBV']
 from sklearn.preprocessing import StandardScaler
 from sklearn.utils.class_weight import compute_class_weight
 
@@ -223,20 +229,19 @@ def train_model():
     upload_to_drive(DATA_FILE)
     progress.progress(10, text="🔒 Backed up raw data to Drive...")
 
-    # Step 3: Feature Engineering
+    # Step 3: Feature Engineering — only features needed for selected set
     progress.progress(20, text="🧠 Calculating technical indicators...")
+    df['EMA12'] = ta.trend.ema_indicator(df['Close'], window=12)
+    df['EMA26'] = ta.trend.ema_indicator(df['Close'], window=26)
     df['EMA9'] = ta.trend.ema_indicator(df['Close'], window=9)
     df['EMA21'] = ta.trend.ema_indicator(df['Close'], window=21)
     df['VWAP'] = ta.volume.volume_weighted_average_price(df['High'], df['Low'], df['Close'], df['Volume'])
     df['RSI'] = ta.momentum.rsi(df['Close'])
     df['MACD'] = ta.trend.macd(df['Close'])
-    df['MACD_Signal'] = ta.trend.macd_signal(df['Close'])
     df['ATR'] = ta.volatility.average_true_range(df['High'], df['Low'], df['Close'])
-    df['ROC'] = ta.momentum.roc(df['Close'])
     df['OBV'] = ta.volume.on_balance_volume(df['Close'], df['Volume'])
-    df['EMA12'] = ta.trend.ema_indicator(df['Close'], window=12)
-    df['EMA26'] = ta.trend.ema_indicator(df['Close'], window=26)
 
+    # Only these will be used as model input:
     df['EMA12_Cross_26'] = (df['EMA12'] > df['EMA26']).astype(int)
     df['EMA9_Cross_21'] = (df['EMA9'] > df['EMA21']).astype(int)
     df['Above_VWAP'] = (df['Close'] > df['VWAP']).astype(int)
@@ -249,8 +254,16 @@ def train_model():
     )
     df.dropna(inplace=True)
 
-    # Step 5: Prepare training set
-    features = SHARED_FEATURES
+    # Step 5: Prepare training set — ONLY these features
+    features = [
+        'EMA12_Cross_26',
+        'EMA9_Cross_21',
+        'Above_VWAP',
+        'RSI',
+        'MACD',
+        'ATR',
+        'OBV'
+    ]
     X = df[features]
     y = df['Target']
 
@@ -407,25 +420,25 @@ def get_data():
     df['Timestamp'] = pd.to_datetime(df['Timestamp'], unit='ms').dt.tz_localize('UTC').dt.tz_convert(est)
     df.set_index('Timestamp', inplace=True)
 
-    df['EMA9'] = ta.trend.ema_indicator(df['Close'], window=9)
-    df['EMA21'] = ta.trend.ema_indicator(df['Close'], window=21)
+    # Needed for cross/binary features:
     df['EMA12'] = ta.trend.ema_indicator(df['Close'], window=12)
     df['EMA26'] = ta.trend.ema_indicator(df['Close'], window=26)
+    df['EMA9'] = ta.trend.ema_indicator(df['Close'], window=9)
+    df['EMA21'] = ta.trend.ema_indicator(df['Close'], window=21)
     df['VWAP'] = ta.volume.volume_weighted_average_price(df['High'], df['Low'], df['Close'], df['Volume'])
     df['RSI'] = ta.momentum.rsi(df['Close'])
     df['MACD'] = ta.trend.macd(df['Close'])
-    df['MACD_Signal'] = ta.trend.macd_signal(df['Close'])
     df['ATR'] = ta.volatility.average_true_range(df['High'], df['Low'], df['Close'])
-    df['ROC'] = ta.momentum.roc(df['Close'])
     df['OBV'] = ta.volume.on_balance_volume(df['Close'], df['Volume'])
 
+    # Only these binary/categorical features will be used
     df['EMA12_Cross_26'] = (df['EMA12'] > df['EMA26']).astype(int)
     df['EMA9_Cross_21'] = (df['EMA9'] > df['EMA21']).astype(int)
     df['Above_VWAP'] = (df['Close'] > df['VWAP']).astype(int)
 
+    # Use only these features for modeling
     features = SHARED_FEATURES
-
-    df.dropna(inplace=True)
+    df.dropna(subset=features, inplace=True)  # drop if any of these features are NaN
     X = df[features]
     X_indexed = X.copy()
 
