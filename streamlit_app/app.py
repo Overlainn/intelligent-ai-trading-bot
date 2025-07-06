@@ -49,6 +49,15 @@ SERVICE_ACCOUNT_INFO = st.secrets["google_service_account"]
 creds = service_account.Credentials.from_service_account_info(SERVICE_ACCOUNT_INFO, scopes=SCOPES)
 drive_service = build('drive', 'v3', credentials=creds)
 
+# Ensure model and scaler are loaded in session state
+if "model" not in st.session_state or "scaler" not in st.session_state:
+    model, scaler = load_model_from_drive()
+    st.session_state.model = model
+    st.session_state.scaler = scaler
+else:
+    model = st.session_state.model
+    scaler = st.session_state.scaler
+
 # ========== Google Drive Functions ==========
 def get_folder_id():
     query = f"name='{FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder'"
