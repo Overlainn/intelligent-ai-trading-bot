@@ -56,6 +56,16 @@ SERVICE_ACCOUNT_INFO = st.secrets["google_service_account"]
 creds = service_account.Credentials.from_service_account_info(SERVICE_ACCOUNT_INFO, scopes=SCOPES)
 drive_service = build('drive', 'v3', credentials=creds)
 
+# ========== UI ==========
+st.set_page_config(layout='wide')
+st.title("🤖 BTC AI Dashboard + ITB Strategy")
+mode = st.radio("Mode", ["Live", "Backtest"], horizontal=True)
+est = pytz.timezone('US/Eastern')
+exchange = ccxt.coinbase()
+logfile = "btc_alert_log.csv"
+if not os.path.exists(logfile):
+    pd.DataFrame(columns=["Timestamp", "Price", "Signal", "Scores"]).to_csv(logfile, index=False)
+
 # ========== Google Drive Functions ==========
 def get_folder_id():
     query = f"name='{FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder'"
@@ -414,16 +424,6 @@ else:
     model, scaler = load_model_from_drive()
 
 features = SHARED_FEATURES
-
-# ========== UI ==========
-st.set_page_config(layout='wide')
-st.title("🤖 BTC AI Dashboard + ITB Strategy")
-mode = st.radio("Mode", ["Live", "Backtest"], horizontal=True)
-est = pytz.timezone('US/Eastern')
-exchange = ccxt.coinbase()
-logfile = "btc_alert_log.csv"
-if not os.path.exists(logfile):
-    pd.DataFrame(columns=["Timestamp", "Price", "Signal", "Scores"]).to_csv(logfile, index=False)
 
 # ========== Data Function ==========
 def get_data():
