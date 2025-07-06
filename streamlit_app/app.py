@@ -81,10 +81,10 @@ st.title("🤖 BTC AI Dashboard + ITB Strategy")
 # --- Add this: ---
 st.sidebar.header("Signal Probability Thresholds")
 long_thresh = st.sidebar.slider(
-    'Long signal probability threshold', min_value=0.5, max_value=0.95, value=0.60, step=0.01
+    'Long signal probability threshold', min_value=0.3, max_value=0.95, value=0.60, step=0.01
 )
 short_thresh = st.sidebar.slider(
-    'Short signal probability threshold', min_value=0.5, max_value=0.95, value=0.60, step=0.01
+    'Short signal probability threshold', min_value=0.3, max_value=0.95, value=0.60, step=0.01
 )
 mode = st.radio("Mode", ["Live", "Backtest"], horizontal=True)
 est = pytz.timezone('US/Eastern')
@@ -302,8 +302,8 @@ def train_model():
     # Step 4: Target Engineering (ATR-based thresholds, less noise!)
     progress.progress(55, text="🎯 Generating labels...")
     future_return = (df['Close'].shift(-4) - df['Close']) / df['Close']
-    atr_threshold = 0.5 * df['ATR'] / df['Close']
-    static_threshold = 0.003
+    atr_threshold = 0.2 * df['ATR'] / df['Close']
+    static_threshold = 0.0015
     threshold = np.maximum(atr_threshold, static_threshold)
     df['Target'] = np.where(future_return > threshold, 2,
                     np.where(future_return < -threshold, 0, 1))
