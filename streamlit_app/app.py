@@ -683,8 +683,8 @@ elif mode == "Backtest":
             ))
 
     # ✅ Add Model Signal Markers
-    signal_longs = df[(df['Prediction'] == 2) & (df['S2'] > 0.55)]
-    signal_shorts = df[(df['Prediction'] == 0) & (df['S0'] > 0.55)]
+    signal_longs = df[(df['Prediction'] == 2) & (df['S2'] > 0.50)]
+    signal_shorts = df[(df['Prediction'] == 0) & (df['S0'] > 0.50)]
 
     fig.add_trace(go.Scatter(
         x=signal_longs.index,
