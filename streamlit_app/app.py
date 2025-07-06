@@ -349,56 +349,56 @@ def train_model():
     class_weights = compute_class_weight('balanced', classes=np.array(expected_classes), y=y_train)
     weight_dict = dict(zip(expected_classes, class_weights))
 
-# ============ Optuna Hyperparameter Tuning ============= #
+    # ============ Optuna Hyperparameter Tuning ============= #
     progress.progress(75, text="🧪 Hyperparameter tuning with Optuna...")
 
-def compute_winrates(y_true, y_pred):
-    """Compute per-class winrates (TP/Total for each true class)."""
-    results = {}
-    for cls in [0, 1, 2]:
-        mask = (y_true == cls)
-        total = mask.sum()
-        correct = (y_pred[mask] == cls).sum() if total > 0 else 0
-        results[f"winrate_{cls}"] = correct / total if total > 0 else np.nan
-    return results
+    def compute_winrates(y_true, y_pred):
+        """Compute per-class winrates (TP/Total for each true class)."""
+        results = {}
+        for cls in [0, 1, 2]:
+            mask = (y_true == cls)
+            total = mask.sum()
+            correct = (y_pred[mask] == cls).sum() if total > 0 else 0
+            results[f"winrate_{cls}"] = correct / total if total > 0 else np.nan
+        return results
 
-def objective(trial):
-    params = {
-        'n_estimators': trial.suggest_int('n_estimators', 50, 250),
-        'max_depth': trial.suggest_int('max_depth', 3, 10),
-        'learning_rate': trial.suggest_float('learning_rate', 1e-4, 0.2, log=True),
-        'subsample': trial.suggest_float('subsample', 0.5, 1.0),
-        'colsample_bytree': trial.suggest_float('colsample_bytree', 0.4, 1.0),
-        'reg_lambda': trial.suggest_float('reg_lambda', 1e-3, 10, log=True),
-        'reg_alpha': trial.suggest_float('reg_alpha', 1e-4, 1.0, log=True),
-        'use_label_encoder': False,
-        'eval_metric': 'mlogloss',
-        'random_state': 42,
-    }
-    model = XGBClassifier(**params)
-    model.fit(
-        X_train_scaled, y_train,
-        eval_set=[(X_val_scaled, y_val)],
-        verbose=False
-    )
-    preds = model.predict(X_val_scaled)
-    macro_f1 = f1_score(y_val, preds, average='macro')
-    accuracy = accuracy_score(y_val, preds)
-    winrates = compute_winrates(y_val.values, preds)
-    # Save all metrics in user_attrs for leaderboard
-    trial.set_user_attr("f1", macro_f1)
-    trial.set_user_attr("accuracy", accuracy)
-    trial.set_user_attr("winrate_0", winrates["winrate_0"])
-    trial.set_user_attr("winrate_1", winrates["winrate_1"])
-    trial.set_user_attr("winrate_2", winrates["winrate_2"])
-    return macro_f1
+    def objective(trial):
+        params = {
+            'n_estimators': trial.suggest_int('n_estimators', 50, 250),
+            'max_depth': trial.suggest_int('max_depth', 3, 10),
+            'learning_rate': trial.suggest_float('learning_rate', 1e-4, 0.2, log=True),
+            'subsample': trial.suggest_float('subsample', 0.5, 1.0),
+            'colsample_bytree': trial.suggest_float('colsample_bytree', 0.4, 1.0),
+            'reg_lambda': trial.suggest_float('reg_lambda', 1e-3, 10, log=True),
+            'reg_alpha': trial.suggest_float('reg_alpha', 1e-4, 1.0, log=True),
+            'use_label_encoder': False,
+            'eval_metric': 'mlogloss',
+            'random_state': 42,
+        }
+        model = XGBClassifier(**params)
+        model.fit(
+            X_train_scaled, y_train,
+            eval_set=[(X_val_scaled, y_val)],
+            verbose=False
+        )
+        preds = model.predict(X_val_scaled)
+        macro_f1 = f1_score(y_val, preds, average='macro')
+        accuracy = accuracy_score(y_val, preds)
+        winrates = compute_winrates(y_val.values, preds)
+        # Save all metrics in user_attrs for leaderboard
+        trial.set_user_attr("f1", macro_f1)
+        trial.set_user_attr("accuracy", accuracy)
+        trial.set_user_attr("winrate_0", winrates["winrate_0"])
+        trial.set_user_attr("winrate_1", winrates["winrate_1"])
+        trial.set_user_attr("winrate_2", winrates["winrate_2"])
+        return macro_f1
 
-# ---- RUN THE STUDY FIRST ----
+    # ---- RUN THE STUDY FIRST ----
     study = optuna.create_study(direction='maximize')
     study.optimize(objective, n_trials=30)  # << Increase n_trials for deeper tuning
 
-# ---- THEN SHOW THE LEADERBOARD ----
-# Extract metrics for leaderboard
+    # ---- THEN SHOW THE LEADERBOARD ----
+    # Extract metrics for leaderboard
     rows = []
     for t in study.trials:
         row = {
@@ -445,8 +445,8 @@ def objective(trial):
         report = classification_report(
             y_val, y_pred, labels=present_labels, target_names=present_names, zero_division=0
         )
-    st.code(report, language='text')
-    
+        st.code(report, language='text')
+
         cm = confusion_matrix(y_val, y_pred, labels=present_labels)
         fig, ax = plt.subplots()
         sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
@@ -471,7 +471,7 @@ def objective(trial):
 
     progress.progress(100, text="✅ Training complete!")
     st.success("🎉 Model trained and uploaded!")
-    
+
     return model, scaler
 
 # ========== Utility Functions ==========
