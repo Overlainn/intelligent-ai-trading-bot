@@ -262,8 +262,8 @@ def train_model():
     st.subheader("📚 Training Model")
     progress = st.progress(0, text="Starting...")
 
-    # Step 1: Load Data (LOAD EXTRA ROWS to survive dropna)
-    EXTRA = 60  # Covers warmup for rolling/EMA/etc.
+    # Step 1: Load Data
+    EXTRA = 60
     RAW_ROWS = 44000 + EXTRA
     raw_df = load_or_fetch_data()
     st.write("Raw rows loaded from source:", len(raw_df))
@@ -289,10 +289,8 @@ def train_model():
     df['ADX'] = ta.trend.adx(df['High'], df['Low'], df['Close'], window=14)
     st.write("Rows after feature engineering:", len(df))
 
-    # Ensure timestamp is datetime
+    # Step 3b: Binary/cross features
     df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
-
-    # Step 3b: Feature Engineering — binary/cross features
     df['EMA9_Cross_21'] = (df['EMA9'] > df['EMA21']).astype(int)
     df['EMA12_Cross_26'] = (df['EMA12'] > df['EMA26']).astype(int)
     df['Above_VWAP'] = (df['Close'] > df['VWAP']).astype(int)
@@ -316,19 +314,16 @@ def train_model():
     static_threshold = 0.0015
     threshold = np.maximum(atr_threshold, static_threshold)
     df['Target'] = np.where(future_return > threshold, 2,
-                    np.where(future_return < -threshold, 0, 1))
+                            np.where(future_return < -threshold, 0, 1))
 
     # Drop rows with NaNs in features or target
     df.dropna(subset=FEATURES + ['Target'], inplace=True)
     st.write("Rows after dropna (final training set):", len(df))
 
     # Step 5: Prepare training set
-    features = FEATURES
-    X = df[features]
+    X = df[FEATURES]
     y = df['Target']
-
-    class_counts = y.value_counts(normalize=True)
-    st.write("📊 Target class distribution:", class_counts)
+    st.write("📊 Target class distribution:", y.value_counts(normalize=True))
 
     expected_classes = [0, 1, 2]
     actual_classes = sorted(y.unique())
@@ -345,98 +340,35 @@ def train_model():
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_val_scaled = scaler.transform(X_val)
-
     class_weights = compute_class_weight('balanced', classes=np.array(expected_classes), y=y_train)
-    weight_dict = dict(zip(expected_classes, class_weights))
 
-    # ============ Optuna Hyperparameter Tuning ============= #
-    progress.progress(75, text="🧪 Hyperparameter tuning with Optuna...")
-
-    def compute_winrates(y_true, y_pred):
-        """Compute per-class winrates (TP/Total for each true class)."""
-        results = {}
-        for cls in [0, 1, 2]:
-            mask = (y_true == cls)
-            total = mask.sum()
-            correct = (y_pred[mask] == cls).sum() if total > 0 else 0
-            results[f"winrate_{cls}"] = correct / total if total > 0 else np.nan
-        return results
-
-    def objective(trial):
-        params = {
-            'n_estimators': trial.suggest_int('n_estimators', 50, 250),
-            'max_depth': trial.suggest_int('max_depth', 3, 10),
-            'learning_rate': trial.suggest_float('learning_rate', 1e-4, 0.2, log=True),
-            'subsample': trial.suggest_float('subsample', 0.5, 1.0),
-            'colsample_bytree': trial.suggest_float('colsample_bytree', 0.4, 1.0),
-            'reg_lambda': trial.suggest_float('reg_lambda', 1e-3, 10, log=True),
-            'reg_alpha': trial.suggest_float('reg_alpha', 1e-4, 1.0, log=True),
-            'use_label_encoder': False,
-            'eval_metric': 'mlogloss',
-            'random_state': 42,
-        }
-        model = XGBClassifier(**params)
-        model.fit(
-            X_train_scaled, y_train,
-            eval_set=[(X_val_scaled, y_val)],
-            verbose=False
-        )
-        preds = model.predict(X_val_scaled)
-        macro_f1 = f1_score(y_val, preds, average='macro')
-        accuracy = accuracy_score(y_val, preds)
-        winrates = compute_winrates(y_val.values, preds)
-        # Save all metrics in user_attrs for leaderboard
-        trial.set_user_attr("f1", macro_f1)
-        trial.set_user_attr("accuracy", accuracy)
-        trial.set_user_attr("winrate_0", winrates["winrate_0"])
-        trial.set_user_attr("winrate_1", winrates["winrate_1"])
-        trial.set_user_attr("winrate_2", winrates["winrate_2"])
-        return macro_f1
-
-    # ---- RUN THE STUDY FIRST ----
-    study = optuna.create_study(direction='maximize')
-    study.optimize(objective, n_trials=30)  # << Increase n_trials for deeper tuning
-
-    # ---- THEN SHOW THE LEADERBOARD ----
-    # Extract metrics for leaderboard
-    rows = []
-    for t in study.trials:
-        row = {
-            "Trial": t.number,
-            "F1": t.user_attrs.get("f1"),
-            "Accuracy": t.user_attrs.get("accuracy"),
-            "Winrate_Short": t.user_attrs.get("winrate_0"),
-            "Winrate_Neutral": t.user_attrs.get("winrate_1"),
-            "Winrate_Long": t.user_attrs.get("winrate_2"),
-            **t.params
-        }
-        rows.append(row)
-    leaderboard_df = pd.DataFrame(rows)
-    leaderboard_df = leaderboard_df.sort_values("F1", ascending=False).head(10)
-    st.subheader("Optuna Trial Leaderboard (Top 10)")
-    st.dataframe(leaderboard_df)
-
-    best_params = study.best_trial.params
-    st.write("🏅 Best Hyperparameters:", best_params)
-
-    # Step 6: Train final model with tuned params
+    # Step 6: Train final model with your best params
     progress.progress(85, text="🔧 Training XGBoost model (best params)...")
-    model = XGBClassifier(**best_params, use_label_encoder=False, eval_metric='mlogloss', random_state=42)
+    # <-- COPY YOUR LATEST OPTUNA PARAMS HERE! -->
+    best_params = {
+        "n_estimators": 186,
+        "max_depth": 8,
+        "learning_rate": 0.0005349070362427248,
+        "subsample": 0.5869836653397046,
+        "colsample_bytree": 0.65743097026186,
+        "reg_lambda": 0.04368036990918477,
+        "reg_alpha": 0.0014410899603732284,
+        "use_label_encoder": False,
+        "eval_metric": "mlogloss",
+        "random_state": 42,
+    }
+    model = XGBClassifier(**best_params)
     model.fit(X_train_scaled, y_train)
 
     # --- Model Diagnostics ---
     st.subheader("🔍 Model Diagnostics")
     y_pred = model.predict(X_val_scaled)
-
-    unique = np.unique(np.concatenate([y_val, y_pred]))
-    all_labels = [0, 1, 2]
-    present_labels = sorted([label for label in all_labels if label in unique])
+    present_labels = sorted([l for l in [0, 1, 2] if l in np.unique(np.concatenate([y_val, y_pred]))])
     all_names = ["Short", "Neutral", "Long"]
     present_names = [all_names[i] for i in present_labels]
 
-    missing_labels = set(all_labels) - set(np.unique(y_val))
-    if missing_labels:
-        st.warning(f"⚠️ Validation set is missing these classes: {missing_labels}")
+    if set([0, 1, 2]) - set(np.unique(y_val)):
+        st.warning(f"⚠️ Validation set is missing these classes: {set([0,1,2])-set(np.unique(y_val))}")
 
     if len(present_labels) < 2:
         st.warning("⚠️ Not enough classes in validation set for diagnostics (need at least 2). "
