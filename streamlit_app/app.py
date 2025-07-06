@@ -320,9 +320,9 @@ def get_training_data():
         df.to_csv(DATA_FILE, index=False)
 
         # ✅ Feature Engineering
-        df['Future_Close'] = df['Close'].shift(-6)
-        df['Pct_Change'] = (df['Future_Close'] - df['Close']) / df['Close']
-        df['Target'] = df['Pct_Change'].apply(lambda x: 2 if x > 0.0022 else (0 if x < -0.0022 else 1))
+        df['Target'] = ((df['Close'].shift(-4) - df['Close']) / df['Close']).apply(
+            lambda x: 2 if x > 0.0022 else (0 if x < -0.0022 else 1)
+        )
         df.dropna(inplace=True)
       # 📊 Show Target Class Distribution
         st.subheader("📊 Target Class Distribution")
