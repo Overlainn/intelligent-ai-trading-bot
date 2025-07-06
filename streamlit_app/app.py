@@ -13,15 +13,26 @@ import numpy as np
 import ta
 from xgboost import XGBClassifier
 
-SHARED_FEATURES = [
+# ======= FEATURE SET ========
+FEATURES = [
     'EMA9_Cross_21',
     'EMA12_Cross_26',
     'Above_VWAP',
     'RSI',
-    'ADX', 
+    'ADX',
     'MACD',
     'ATR',
-    'OBV']
+    'OBV',
+    'Return_1',    # 1-bar return
+    'Return_3',    # 3-bar return
+    'BB_Width',    # Bollinger Band width
+    'Above_20SMA', # Regime: above/below 20SMA
+    'Above_50SMA', # Regime: above/below 50SMA
+    'Volume_Spike', # 1 if volume > 1.5x 20-bar avg
+    'HourOfDay',   # Hour of day (int)
+    'DayOfWeek',   # Day of week (int)
+]
+
 from sklearn.preprocessing import StandardScaler
 from sklearn.utils.class_weight import compute_class_weight
 
@@ -59,6 +70,14 @@ drive_service = build('drive', 'v3', credentials=creds)
 # ========== UI ==========
 st.set_page_config(layout='wide')
 st.title("🤖 BTC AI Dashboard + ITB Strategy")
+# --- Add this: ---
+st.sidebar.header("Signal Probability Thresholds")
+long_thresh = st.sidebar.slider(
+    'Long signal probability threshold', min_value=0.5, max_value=0.95, value=0.60, step=0.01
+)
+short_thresh = st.sidebar.slider(
+    'Short signal probability threshold', min_value=0.5, max_value=0.95, value=0.60, step=0.01
+)
 mode = st.radio("Mode", ["Live", "Backtest"], horizontal=True)
 est = pytz.timezone('US/Eastern')
 exchange = ccxt.coinbase()
@@ -231,12 +250,10 @@ def train_model():
     st.subheader("📚 Training Model")
     progress = st.progress(0, text="Starting...")
 
-    
-
     # Step 1: Load Data
     progress.progress(5, text="📥 Loading dataset...")
-    df = load_or_fetch_data()# Step 1: Load Data
-    df = df.tail(35000)  # <-- Only keep the most recent 50,000 rows
+    df = load_or_fetch_data()
+    df = df.tail(35000)  # <-- Only keep the most recent 35,000 rows
     st.write(f"Training on {len(df)} most recent rows.")
 
     # Step 2: Save and sync raw file
@@ -244,7 +261,7 @@ def train_model():
     upload_to_drive(DATA_FILE)
     progress.progress(10, text="🔒 Backed up raw data to Drive...")
 
-    # Step 3: Feature Engineering — only features needed for selected set
+    # Step 3: Feature Engineering — classic indicators
     progress.progress(20, text="🧠 Calculating technical indicators...")
     df['EMA12'] = ta.trend.ema_indicator(df['Close'], window=12)
     df['EMA26'] = ta.trend.ema_indicator(df['Close'], window=26)
@@ -257,31 +274,45 @@ def train_model():
     df['OBV'] = ta.volume.on_balance_volume(df['Close'], df['Volume'])
     df['ADX'] = ta.trend.adx(df['High'], df['Low'], df['Close'], window=14)
 
+    # Ensure timestamp is datetime
+    df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
 
-    # Only these will be used as model input:
+    # Step 3b: Feature Engineering — binary/cross features
     df['EMA9_Cross_21'] = (df['EMA9'] > df['EMA21']).astype(int)
     df['EMA12_Cross_26'] = (df['EMA12'] > df['EMA26']).astype(int)
     df['Above_VWAP'] = (df['Close'] > df['VWAP']).astype(int)
+
+    # Step 3c: Feature Engineering — advanced/new features
+    df['Return_1'] = df['Close'].pct_change(1)
+    df['Return_3'] = df['Close'].pct_change(3)
+    df['BB_Width'] = ta.volatility.bollinger_wband(df['Close'])
+    df['Above_20SMA'] = (df['Close'] > df['Close'].rolling(20).mean()).astype(int)
+    df['Above_50SMA'] = (df['Close'] > df['Close'].rolling(50).mean()).astype(int)
+    df['Volume_Spike'] = (df['Volume'] > df['Volume'].rolling(20).mean() * 1.5).astype(int)
+    df['HourOfDay'] = df['Timestamp'].dt.hour
+    df['DayOfWeek'] = df['Timestamp'].dt.dayofweek
+
+    # Drop any rows with NaNs in the feature columns
+    df.dropna(subset=FEATURES, inplace=True)
     progress.progress(45, text="✅ Features engineered.")
 
-    # Step 4: Target Engineering
+    # Step 4: Target Engineering (ATR-based thresholds, less noise!)
     progress.progress(55, text="🎯 Generating labels...")
-    df['Target'] = ((df['Close'].shift(-4) - df['Close']) / df['Close']).apply(
-        lambda x: 2 if x > 0.0003 else (0 if x < -0.0003 else 1)
-    )
+    future_return = (df['Close'].shift(-4) - df['Close']) / df['Close']
+
+    # Dynamic threshold: 0.5 ATR or 0.3%, whichever is larger (per row)
+    atr_threshold = 0.5 * df['ATR'] / df['Close']
+    static_threshold = 0.003  # 0.3%
+    threshold = np.maximum(atr_threshold, static_threshold)
+
+    df['Target'] = np.where(future_return > threshold, 2,
+                    np.where(future_return < -threshold, 0, 1))
+
+    st.write("New target class distribution:", df['Target'].value_counts(normalize=True))
     df.dropna(inplace=True)
 
     # Step 5: Prepare training set — ONLY these features
-    features = [
-        'EMA9_Cross_21',
-        'EMA12_Cross_26',
-        'Above_VWAP',
-        'RSI',
-        'ADX',
-        'MACD',
-        'ATR',
-        'OBV'
-    ]
+    features = FEATURES
     X = df[features]
     y = df['Target']
 
@@ -310,8 +341,8 @@ def train_model():
         max_depth=8,
         subsample=0.8225853585276496,
         colsample_bytree=0.7568432811752354,
-        reg_lambda=3.637306054328782,  # 'lambda' becomes 'reg_lambda' in XGBClassifier
-        reg_alpha=0.0721387326567655,  # 'alpha' becomes 'reg_alpha'
+        reg_lambda=3.637306054328782,
+        reg_alpha=0.0721387326567655,
         use_label_encoder=False,
         eval_metric='mlogloss',
         random_state=42
@@ -409,7 +440,7 @@ if should_retrain():
 else:
     model, scaler = load_model_from_drive()
 
-features = SHARED_FEATURES
+features = FEATURES
 
 # ========== Model/Scaler session state initialization ==========
 
@@ -452,7 +483,7 @@ def get_data():
     df['Above_VWAP'] = (df['Close'] > df['VWAP']).astype(int)
 
     # Use only these features for modeling
-    features = SHARED_FEATURES
+    features = FEATURES
     df.dropna(subset=features, inplace=True)  # drop if any of these features are NaN
     X = df[features]
     X_indexed = X.copy()
@@ -493,7 +524,7 @@ if mode == "Live":
 
     # ✅ Load latest live data
     df = get_data()
-    features = SHARED_FEATURES
+    features = FEATURES
     X = scaler.transform(df[features])
     raw_probs = model.predict_proba(X)
 
@@ -512,10 +543,10 @@ if mode == "Live":
     for idx, row in df.iterrows():
         signal = None
         confidence = 0
-        if row['Prediction'] == 2 and row['S2'] > 0.60:
+        if row['Prediction'] == 2 and row['S2'] > long_thresh:
             signal = 'Long'
             confidence = row['S2']
-        elif row['Prediction'] == 0 and row['S0'] > 0.60:
+        elif row['Prediction'] == 0 and row['S0'] > short_thresh:
             signal = 'Short'
             confidence = row['S0']
         else:
@@ -539,8 +570,8 @@ if mode == "Live":
     fig.add_trace(go.Scatter(x=df.index, y=df['Close'], name='Price', line=dict(color='lightblue')))
 
     # ✅ Plot current signals (from this model run)
-    long_signals = df[(df['Prediction'] == 2) & (df['S2'] > 0.60)]
-    short_signals = df[(df['Prediction'] == 0) & (df['S0'] > 0.60)]
+    long_signals = df[(df['Prediction'] == 2) & (df['S2'] > long_thresh)]
+    short_signals = df[(df['Prediction'] == 0) & (df['S0'] > short_thresh)]
 
     fig.add_trace(go.Scatter(
         x=long_signals.index,
@@ -608,9 +639,8 @@ elif mode == "Backtest":
 
             # === ENTRY LOGIC ===
             if in_position is None:
-                valid_long = row['Prediction'] == 2 and row['S2'] > 0.60
-                valid_short = row['Prediction'] == 0 and row['S0'] > 0.60
-
+                valid_long = row['Prediction'] == 2 and row['S2'] > long_thresh
+                valid_short = row['Prediction'] == 0 and row['S0'] > short_thresh
                 if valid_long and passes_itb:
                     in_position = "LONG"
                     entry_time, entry_price, entry_row = row.name, row['Close'], row
@@ -620,7 +650,7 @@ elif mode == "Backtest":
 
             # === EXIT LOGIC ===
             elif in_position == "LONG":
-                valid_exit = row['Prediction'] == 0 and row['S0'] > 0.60
+                valid_exit = row['Prediction'] == 0 and row['S0'] > short_thresh
                 if valid_exit:
                     trades.append({
                         "Entry Time": entry_time,
@@ -636,7 +666,7 @@ elif mode == "Backtest":
                     in_position = None
 
             elif in_position == "SHORT":
-                valid_exit = row['Prediction'] == 2 and row['S2'] > 0.60
+                valid_exit = row['Prediction'] == 2 and row['S2'] > long_thresh
                 if valid_exit:
                     trades.append({
                         "Entry Time": entry_time,
@@ -695,8 +725,8 @@ elif mode == "Backtest":
             ))
 
     # ✅ Add Model Signal Markers
-    signal_longs = df[(df['Prediction'] == 2) & (df['S2'] > 0.60)]
-    signal_shorts = df[(df['Prediction'] == 0) & (df['S0'] > 0.60)]
+    signal_longs = df[(df['Prediction'] == 2) & (df['S2'] > long_thresh)]
+    signal_shorts = df[(df['Prediction'] == 0) & (df['S0'] > short_thresh)]
 
     fig.add_trace(go.Scatter(
         x=signal_longs.index,
