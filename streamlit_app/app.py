@@ -431,6 +431,7 @@ def get_data():
     df['EMA9'] = ta.trend.ema_indicator(df['Close'], window=9)
     df['EMA21'] = ta.trend.ema_indicator(df['Close'], window=21)
     df['VWAP'] = ta.volume.volume_weighted_average_price(df['High'], df['Low'], df['Close'], df['Volume'])
+    df['ADX'] = ta.trend.adx(df['High'], df['Low'], df['Close'], window=14)
     df['RSI'] = ta.momentum.rsi(df['Close'])
     df['MACD'] = ta.trend.macd(df['Close'])
     df['ATR'] = ta.volatility.average_true_range(df['High'], df['Low'], df['Close'])
