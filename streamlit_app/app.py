@@ -64,8 +64,8 @@ from trading_engine.strategy import should_enter_trade
 # ✅ Model/scaler + Training + Auto‑load logic
 import joblib
 
-long_thresh = 0.33
-short_thresh = 0.33
+long_thresh = 0.50
+short_thresh = 0.50
 
 MODEL_FILE = "model.pkl"
 SCALER_FILE = "scaler.pkl"
