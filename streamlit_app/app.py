@@ -366,17 +366,21 @@ def load_model_from_drive():
         st.warning(f"⚠️ Error reading model file: {e}")
         return train_model()
 
-# ✅ Load model/scaler at startup
-model, scaler = load_model_from_drive()
-
 # ========== Model/Scaler session state initialization ==========
+
+def get_fresh_model():
+    if should_retrain():
+        model, scaler = train_model()
+        save_last_train_time()
+    else:
+        model, scaler = load_model_from_drive()
+    return model, scaler
+
 if "model" not in st.session_state or "scaler" not in st.session_state:
-    model, scaler = load_model_from_drive()
-    st.session_state.model = model
-    st.session_state.scaler = scaler
-else:
-    model = st.session_state.model
-    scaler = st.session_state.scaler
+    st.session_state.model, st.session_state.scaler = get_fresh_model()
+
+model = st.session_state.model
+scaler = st.session_state.scaler
 
 # ========== Load or Retrain Model ==========
 RETRAIN_INTERVAL = timedelta(hours=12)
