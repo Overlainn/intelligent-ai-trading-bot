@@ -344,7 +344,6 @@ def train_model():
 
     # Step 6: Train final model with your best params
     progress.progress(85, text="🔧 Training XGBoost model (best params)...")
-    # <-- COPY YOUR LATEST OPTUNA PARAMS HERE! -->
     best_params = {
         "n_estimators": 186,
         "max_depth": 8,
