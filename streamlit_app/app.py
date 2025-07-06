@@ -443,7 +443,6 @@ def get_data():
 
     return df
 
-# ========== Live Mode ==========
 if mode == "Live":
     st.header("🟢 Live Mode")
 
@@ -451,20 +450,9 @@ if mode == "Live":
     from streamlit_autorefresh import st_autorefresh
     st_autorefresh(interval=900000, limit=None, key="live_refresh")
 
-    # ✅ Load model and scaler
-    model, scaler = load_model_from_drive()
-
-    # ✅ Initialize signal log in session state if needed
-    if "signal_log" not in st.session_state:
-        if download_from_drive("signal_log.csv"):
-            try:
-                df_loaded = pd.read_csv("signal_log.csv")
-                st.session_state.signal_log = df_loaded.to_dict(orient="records")
-            except Exception as e:
-                st.warning(f"⚠️ Failed to load signal log from Drive: {e}")
-                st.session_state.signal_log = []
-        else:
-            st.session_state.signal_log = []
+    # ✅ Always use the model/scaler from session state
+    model = st.session_state.model
+    scaler = st.session_state.scaler
 
     # ✅ Load latest live data
     df = get_data()
@@ -482,63 +470,42 @@ if mode == "Live":
     df['S1'] = full_probs[:, 1]
     df['S2'] = full_probs[:, 2]
 
-    # ✅ Extract last row
-    last = df.iloc[-1]
-    last_timestamp = df.index[-1]  # ✅ fixed timestamp
+    # ========== Build Signal Log for All Candles ==========
+    signal_log = []
+    for idx, row in df.iterrows():
+        signal = None
+        confidence = 0
+        if row['Prediction'] == 2 and row['S2'] > 0.50:
+            signal = 'Long'
+            confidence = row['S2']
+        elif row['Prediction'] == 0 and row['S0'] > 0.55:
+            signal = 'Short'
+            confidence = row['S0']
+        else:
+            signal = "None"
+        signal_log.append({
+            "Timestamp": idx,
+            "Price": round(row['Close'], 2),
+            "Signal": signal,
+            "Short": round(row['S0'], 4) if row['S0'] is not None else None,
+            "Neutral": round(row['S1'], 4) if row['S1'] is not None else None,
+            "Long": round(row['S2'], 4) if row['S2'] is not None else None,
+            "Confidence": round(confidence, 4)
+        })
 
-    signal = None
-    confidence = 0
+    signal_df = pd.DataFrame(signal_log)
+    signal_df["Timestamp"] = pd.to_datetime(signal_df["Timestamp"], errors="coerce")
+    signal_df = signal_df.sort_values(by="Timestamp", ascending=False)
 
-    if last['Prediction'] == 2 and last['S2'] > 0.50:
-        signal = 'Long'
-        confidence = last['S2']
-    elif last['Prediction'] == 0 and last['S0'] > 0.55:
-        signal = 'Short'
-        confidence = last['S0']
-
-    # ✅ Remove existing entry for same timestamp
-    st.session_state.signal_log = [
-        entry for entry in st.session_state.signal_log
-        if pd.to_datetime(entry["Timestamp"], errors="coerce") != last_timestamp
-    ]
-
-    # ✅ Log every 15min prediction regardless of signal strength
-    st.session_state.signal_log.append({
-        "Timestamp": last_timestamp,
-        "Price": round(last['Close'], 2),
-        "Signal": signal or "None",
-        "Short": round(last['S0'], 4),
-        "Neutral": round(last['S1'], 4),
-        "Long": round(last['S2'], 4),
-        "Confidence": round(confidence, 4)
-    })
-
-    # ✅ Keep only last 100 & filter out non-signals older than 45 min
-    now = pd.Timestamp.utcnow()
-    st.session_state.signal_log = [
-        entry for entry in st.session_state.signal_log
-        if (
-            entry["Signal"] in ["Long", "Short"]
-            or pd.to_datetime(entry["Timestamp"], errors="coerce") >= now - pd.Timedelta(minutes=45)
-        )
-    ][-100:]
-
-    # ✅ Save signal log to Drive
-    signal_df = pd.DataFrame(st.session_state.signal_log)
-    signal_df.to_csv("signal_log.csv", index=False)
-    upload_to_drive("signal_log.csv")
-    signal_df['Timestamp'] = pd.to_datetime(signal_df['Timestamp'], errors='coerce', utc=True)
-    signal_df['Timestamp'] = signal_df['Timestamp'].dt.tz_convert('Etc/UTC')
-
-    # 📈 Plot Price + Indicators
+    # ========== Plot Price + Indicators ==========
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df.index, y=df['Close'], name='Price', line=dict(color='lightblue')))
     fig.add_trace(go.Scatter(x=df.index, y=df['EMA9'], name='EMA9', line=dict(color='blue')))
     fig.add_trace(go.Scatter(x=df.index, y=df['EMA21'], name='EMA21', line=dict(color='orange')))
     fig.add_trace(go.Scatter(x=df.index, y=df['VWAP'], name='VWAP', line=dict(color='red')))
 
-    # ✅ Plot historical Long/Short signals
-    long_signals = df[(df['Prediction'] == 2) & (df['S2'] > 0.55)]
+    # ✅ Plot current signals (from this model run)
+    long_signals = df[(df['Prediction'] == 2) & (df['S2'] > 0.50)]
     short_signals = df[(df['Prediction'] == 0) & (df['S0'] > 0.55)]
 
     fig.add_trace(go.Scatter(
@@ -548,7 +515,6 @@ if mode == "Live":
         marker=dict(color='green', size=8),
         name='Long Signal'
     ))
-
     fig.add_trace(go.Scatter(
         x=short_signals.index,
         y=short_signals['Close'],
@@ -558,7 +524,7 @@ if mode == "Live":
     ))
 
     fig.update_layout(
-        title=f"📉 BTC Live — ${last['Close']:.2f}",
+        title=f"📉 BTC Live — ${df['Close'].iloc[-1]:.2f}",
         height=600,
         xaxis_title="Time",
         yaxis_title="Price",
@@ -568,34 +534,27 @@ if mode == "Live":
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # 📋 Signal Log Table
-    st.subheader("📊 Signal Log")
-    if not signal_df.empty and "Timestamp" in signal_df.columns:
-        signal_df["Timestamp"] = pd.to_datetime(signal_df["Timestamp"], errors="coerce")
-        signal_df = signal_df.sort_values(by="Timestamp", ascending=False)
-        st.dataframe(signal_df, use_container_width=True)
-    else:
-        st.info("No signals logged yet.")
+    # 📋 Signal Log Table (current predictions only)
+    st.subheader("📊 Signal Log (Current Model Predictions)")
+    st.dataframe(signal_df, use_container_width=True)
 
+    # Optionally filter for only actionable signals:
+    # actionable = signal_df[signal_df["Signal"].isin(["Long", "Short"])]
+    # st.dataframe(actionable, use_container_width=True)
 
     import pytz
     est = pytz.timezone('US/Eastern')
     now_est = datetime.now(est)
     st.write("⏰ Last refreshed:", now_est.strftime("%H:%M:%S"))
-  
 
-    # 🔁 Force Retrain
+    # 🔁 Force Retrain button remains as is
     st.markdown("---")
     if st.button("🔁 Force Retrain", type="primary"):
         with st.spinner("Retraining model..."):
             model, scaler = train_model()
-
-            if model is None:
-                st.error("❌ Retrain failed — model returned None.")
-            else:
-                st.success("✅ Model retrained successfully.")
-                st.write("📦 Model and scaler:", model, scaler)
-
+            st.session_state.model = model
+            st.session_state.scaler = scaler
+            st.success("✅ Model retrained successfully.")
             st.rerun()
 
 # ========== Backtest Mode ==========
