@@ -29,7 +29,7 @@ FEATURES = [
 MODEL_FILE = "model.pkl"
 DATA_FILE = "btc_data.csv"
 LAST_TRAIN_FILE = "last_train.txt"
-RETRAIN_INTERVAL = timedelta(hours=12)
+RETRAIN_INTERVAL = timedelta(hours=18)
 FOLDER_NAME = "StreamlitITB"
 
 SCOPES = ['https://www.googleapis.com/auth/drive']
