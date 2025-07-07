@@ -1,14 +1,8 @@
 import sys, os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-# Core libraries
 import time, io, pickle, requests
-from datetime import datetime, date, timedelta
-from streamlit_autorefresh import st_autorefresh
-from sklearn.model_selection import train_test_split
-from sklearn.utils.multiclass import unique_labels
-from sklearn.metrics import classification_report, confusion_matrix
-from sklearn.metrics import f1_score, accuracy_score
+from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
 import ta
@@ -17,6 +11,8 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import StandardScaler
 from sklearn.utils.class_weight import compute_class_weight
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, confusion_matrix
 import plotly.graph_objs as go
 import streamlit as st
 import pytz
@@ -25,14 +21,11 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload, MediaFileUpload
 import ccxt
 
-# ==== STRICT FEATURES (only these!) ====
+# ========== STRICT FEATURE SET ==========
 FEATURES = [
     'EMA9', 'EMA21', 'VWAP', 'RSI', 'MACD', 'MACD_Signal',
     'ATR', 'ROC', 'OBV', 'EMA12_Cross_26', 'EMA9_Cross_21', 'Above_VWAP'
 ]
-
-long_thresh = 0.50
-short_thresh = 0.50
 
 MODEL_FILE = "model.pkl"
 SCALER_FILE = "scaler.pkl"
@@ -48,7 +41,7 @@ drive_service = build('drive', 'v3', credentials=creds)
 
 # ========== UI ==========
 st.set_page_config(layout='wide')
-st.title("🤖 BTC AI Dashboard (Strict Features Version)")
+st.title("🤖 BTC AI Dashboard (Strict 30m/5000 Features)")
 
 st.sidebar.header("Signal Probability Thresholds")
 long_thresh = st.sidebar.slider(
@@ -80,12 +73,10 @@ def upload_to_drive(filename, drive_name=None):
     file_name = drive_name or os.path.basename(filename)
     media = MediaFileUpload(filename, resumable=True)
     body = {'name': file_name, 'parents': [folder_id]}
-
     existing = drive_service.files().list(
         q=f"name='{file_name}' and '{folder_id}' in parents",
         fields='files(id)'
     ).execute().get('files', [])
-
     if existing:
         drive_service.files().delete(fileId=existing[0]['id']).execute()
     drive_service.files().create(body=body, media_body=media).execute()
@@ -94,12 +85,10 @@ def upload_to_drive_stream(file_stream, filename):
     folder_id = get_folder_id()
     media = MediaIoBaseUpload(file_stream, mimetype='application/octet-stream', resumable=True)
     file_metadata = {'name': filename, 'parents': [folder_id]}
-
     existing = drive_service.files().list(
         q=f"name='{filename}' and '{folder_id}' in parents",
         fields='files(id)'
     ).execute().get('files', [])
-
     if existing:
         try:
             drive_service.files().delete(fileId=existing[0]['id']).execute()
@@ -129,18 +118,18 @@ def download_from_drive(filename):
         f.write(fh.getvalue())
     return True
 
-# ========== Historical Data Fetching ==========
-def fetch_paginated_ohlcv(symbol='BTC/USDT', timeframe='15m', days=90):
+# ========== Data Fetching ==========
+def fetch_paginated_ohlcv(symbol='BTC/USDT', timeframe='30m', days=90):
     exchange = ccxt.coinbase()
     since = exchange.milliseconds() - days * 24 * 60 * 60 * 1000
     all_data = []
     while True:
-        data = exchange.fetch_ohlcv(symbol, timeframe, since=since, limit=1000)
+        data = exchange.fetch_ohlcv(symbol, timeframe, since=since, limit=5000)
         if not data:
             break
         all_data.extend(data)
         since = data[-1][0] + 60_000
-        if len(data) < 1000:
+        if len(data) < 5000:
             break
         time.sleep(exchange.rateLimit / 1000)
     df = pd.DataFrame(all_data, columns=['Timestamp', 'Open', 'High', 'Low', 'Close', 'Volume'])
@@ -150,10 +139,8 @@ def fetch_paginated_ohlcv(symbol='BTC/USDT', timeframe='15m', days=90):
 
 def load_or_fetch_data():
     trained_flag = "trained_once.flag"
-
     def trained_before():
         return os.path.exists(trained_flag) or download_from_drive(trained_flag)
-
     if not trained_before():
         if not download_from_drive("BTC_4_Candle.csv"):
             st.error("❌ Could not find BTC_4_Candle.csv on Google Drive.")
@@ -173,7 +160,6 @@ def load_or_fetch_data():
             f.write("trained")
         upload_to_drive(trained_flag)
         return df
-
     if os.path.exists(DATA_FILE):
         df = pd.read_csv(DATA_FILE)
         if "Timestamp" in df.columns:
@@ -217,7 +203,7 @@ def train_model():
     progress = st.progress(0, text="Starting...")
 
     EXTRA = 60
-    RAW_ROWS = 44000 + EXTRA
+    RAW_ROWS = 5000 + EXTRA
     raw_df = load_or_fetch_data()
     st.write("Raw rows loaded from source:", len(raw_df))
     df = raw_df.tail(RAW_ROWS)
@@ -239,11 +225,9 @@ def train_model():
     df['ATR'] = ta.volatility.average_true_range(df['High'], df['Low'], df['Close'])
     df['ROC'] = ta.momentum.roc(df['Close'])
     df['OBV'] = ta.volume.on_balance_volume(df['Close'], df['Volume'])
-
     df['EMA12_Cross_26'] = (df['EMA12'] > df['EMA26']).astype(int)
     df['EMA9_Cross_21'] = (df['EMA9'] > df['EMA21']).astype(int)
     df['Above_VWAP'] = (df['Close'] > df['VWAP']).astype(int)
-
     st.write("Rows before dropna:", len(df))
 
     progress.progress(55, text="🎯 Generating labels...")
@@ -395,7 +379,7 @@ scaler = st.session_state.scaler
 # ========== get_data() Strict Version ==========
 def get_data():
     df = pd.DataFrame(
-        exchange.fetch_ohlcv('BTC/USDT', '15m', limit=5000),
+        exchange.fetch_ohlcv('BTC/USDT', '30m', limit=5000),
         columns=['Timestamp', 'Open', 'High', 'Low', 'Close', 'Volume']
     )
     est = pytz.timezone('US/Eastern')
@@ -441,6 +425,7 @@ def get_data():
 # ========== Live Mode ==========
 if mode == "Live":
     st.header("🟢 Live Mode")
+    from streamlit_autorefresh import st_autorefresh
     st_autorefresh(interval=900000, limit=None, key="live_refresh")
     model = st.session_state.model
     scaler = st.session_state.scaler
@@ -515,7 +500,6 @@ if mode == "Live":
     st.subheader("📊 Signal Log (Current Model Predictions)")
     st.dataframe(signal_df, use_container_width=True)
 
-    est = pytz.timezone('US/Eastern')
     now_est = datetime.now(est)
     st.write("⏰ Last refreshed:", now_est.strftime("%H:%M:%S"))
 
