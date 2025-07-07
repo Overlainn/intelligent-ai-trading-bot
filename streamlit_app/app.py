@@ -41,8 +41,8 @@ st.set_page_config(layout='wide')
 st.title("🤖 BTC AI Dashboard")
 
 # ======= THRESHOLDS =======
-long_thresh = 0.5
-short_thresh = 0.5
+long_thresh = 0.6
+short_thresh = 0.6
 
 mode = st.radio("Mode", ["Live", "Backtest"], horizontal=True)
 est = pytz.timezone('US/Eastern')
