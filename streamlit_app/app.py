@@ -1,4 +1,3 @@
-# --- Your existing imports ---
 import sys, os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -9,61 +8,28 @@ from streamlit_autorefresh import st_autorefresh
 from sklearn.model_selection import train_test_split
 from sklearn.utils.multiclass import unique_labels
 from sklearn.metrics import classification_report, confusion_matrix
-import optuna
-from sklearn.metrics import f1_score, classification_report, confusion_matrix
-import seaborn as sns
-import matplotlib.pyplot as plt
 from sklearn.metrics import f1_score, accuracy_score
-
-# Data and ML
 import pandas as pd
 import numpy as np
 import ta
 from xgboost import XGBClassifier
 import seaborn as sns
 import matplotlib.pyplot as plt
-
-# ======= FEATURE SET ========
-FEATURES = [
-    'EMA9_Cross_21',
-    'EMA12_Cross_26',
-    'Above_VWAP',
-    'RSI',
-    'ADX',
-    'MACD',
-    'ATR',
-    'OBV',
-    'Return_1',    # 1-bar return
-    'Return_3',    # 3-bar return
-    'BB_Width',    # Bollinger Band width
-    'Above_20SMA', # Regime: above/below 20SMA
-    'Above_50SMA', # Regime: above/below 50SMA
-    'Volume_Spike', # 1 if volume > 1.5x 20-bar avg
-    'HourOfDay',   # Hour of day (int)
-    'DayOfWeek',   # Day of week (int)
-]
-
 from sklearn.preprocessing import StandardScaler
 from sklearn.utils.class_weight import compute_class_weight
-
-# Visualization
 import plotly.graph_objs as go
-
-# Web app and timezone
 import streamlit as st
 import pytz
-
-# Google Drive
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload, MediaFileUpload
-
-# Trading logic
 import ccxt
-from trading_engine.strategy import should_enter_trade
 
-# ✅ Model/scaler + Training + Auto‑load logic
-import joblib
+# ==== STRICT FEATURES (only these!) ====
+FEATURES = [
+    'EMA9', 'EMA21', 'VWAP', 'RSI', 'MACD', 'MACD_Signal',
+    'ATR', 'ROC', 'OBV', 'EMA12_Cross_26', 'EMA9_Cross_21', 'Above_VWAP'
+]
 
 long_thresh = 0.50
 short_thresh = 0.50
@@ -82,8 +48,8 @@ drive_service = build('drive', 'v3', credentials=creds)
 
 # ========== UI ==========
 st.set_page_config(layout='wide')
-st.title("🤖 BTC AI Dashboard + ITB Strategy")
-# --- Add this: ---
+st.title("🤖 BTC AI Dashboard (Strict Features Version)")
+
 st.sidebar.header("Signal Probability Thresholds")
 long_thresh = st.sidebar.slider(
     'Long signal probability threshold', min_value=0.3, max_value=0.95, value=0.60, step=0.01
@@ -182,16 +148,13 @@ def fetch_paginated_ohlcv(symbol='BTC/USDT', timeframe='15m', days=90):
     df.set_index('Timestamp', inplace=True)
     return df
 
-
 def load_or_fetch_data():
     trained_flag = "trained_once.flag"
 
-    # Check if we already trained on BTC_4_Candle.csv
     def trained_before():
         return os.path.exists(trained_flag) or download_from_drive(trained_flag)
 
     if not trained_before():
-        # 🔁 First-time training from BTC_4_Candle.csv
         if not download_from_drive("BTC_4_Candle.csv"):
             st.error("❌ Could not find BTC_4_Candle.csv on Google Drive.")
             return pd.DataFrame()
@@ -204,19 +167,13 @@ def load_or_fetch_data():
         except Exception as e:
             st.error(f"❌ Failed to read BTC_4_Candle.csv: {e}")
             return pd.DataFrame()
-
-        # ✅ Save local copy to keep consistent with the rest of app
         df.to_csv(DATA_FILE, index=False)
         upload_to_drive(DATA_FILE)
-
-        # ✅ Create flag file so we never use BTC_4_Candle.csv again
         with open(trained_flag, 'w') as f:
             f.write("trained")
         upload_to_drive(trained_flag)
-
         return df
 
-    # ✅ From now on: use local btc_data.csv or fetch online if missing
     if os.path.exists(DATA_FILE):
         df = pd.read_csv(DATA_FILE)
         if "Timestamp" in df.columns:
@@ -225,8 +182,6 @@ def load_or_fetch_data():
         else:
             st.error("❌ 'Timestamp' column missing in local CSV.")
             return pd.DataFrame()
-
-    # 🔁 No local data file, try fetching online
     if not download_from_drive(DATA_FILE):
         df = fetch_paginated_ohlcv()
         df.reset_index(inplace=True)
@@ -234,8 +189,6 @@ def load_or_fetch_data():
         df.to_csv(DATA_FILE, index=False)
         upload_to_drive(DATA_FILE)
         return df
-
-    # ✅ File downloaded from Drive
     df = pd.read_csv(DATA_FILE)
     if "Timestamp" in df.columns:
         df["Timestamp"] = pd.to_datetime(df["Timestamp"], errors="coerce")
@@ -258,11 +211,11 @@ if time.time() - st.session_state.last_refresh > 60:
     st.session_state.last_refresh = time.time()
     st.rerun()
 
+# ========== Strict train_model() ==========
 def train_model():
     st.subheader("📚 Training Model")
     progress = st.progress(0, text="Starting...")
 
-    # Step 1: Load Data
     EXTRA = 60
     RAW_ROWS = 44000 + EXTRA
     raw_df = load_or_fetch_data()
@@ -270,57 +223,37 @@ def train_model():
     df = raw_df.tail(RAW_ROWS)
     st.write("Rows after tail(RAW_ROWS):", len(df))
 
-    # Step 2: Save and sync raw file
     df.to_csv(DATA_FILE, index=False)
     upload_to_drive(DATA_FILE)
     progress.progress(10, text="🔒 Backed up raw data to Drive...")
 
-    # Step 3: Feature Engineering
     progress.progress(20, text="🧠 Calculating technical indicators...")
-    df['EMA12'] = ta.trend.ema_indicator(df['Close'], window=12)
-    df['EMA26'] = ta.trend.ema_indicator(df['Close'], window=26)
     df['EMA9'] = ta.trend.ema_indicator(df['Close'], window=9)
     df['EMA21'] = ta.trend.ema_indicator(df['Close'], window=21)
+    df['EMA12'] = ta.trend.ema_indicator(df['Close'], window=12)
+    df['EMA26'] = ta.trend.ema_indicator(df['Close'], window=26)
     df['VWAP'] = ta.volume.volume_weighted_average_price(df['High'], df['Low'], df['Close'], df['Volume'])
     df['RSI'] = ta.momentum.rsi(df['Close'])
     df['MACD'] = ta.trend.macd(df['Close'])
+    df['MACD_Signal'] = ta.trend.macd_signal(df['Close'])
     df['ATR'] = ta.volatility.average_true_range(df['High'], df['Low'], df['Close'])
+    df['ROC'] = ta.momentum.roc(df['Close'])
     df['OBV'] = ta.volume.on_balance_volume(df['Close'], df['Volume'])
-    df['ADX'] = ta.trend.adx(df['High'], df['Low'], df['Close'], window=14)
-    st.write("Rows after feature engineering:", len(df))
 
-    # Step 3b: Binary/cross features
-    df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
-    df['EMA9_Cross_21'] = (df['EMA9'] > df['EMA21']).astype(int)
     df['EMA12_Cross_26'] = (df['EMA12'] > df['EMA26']).astype(int)
+    df['EMA9_Cross_21'] = (df['EMA9'] > df['EMA21']).astype(int)
     df['Above_VWAP'] = (df['Close'] > df['VWAP']).astype(int)
-
-    # Step 3c: Advanced/new features
-    df['Return_1'] = df['Close'].pct_change(1)
-    df['Return_3'] = df['Close'].pct_change(3)
-    df['BB_Width'] = ta.volatility.bollinger_wband(df['Close'])
-    df['Above_20SMA'] = (df['Close'] > df['Close'].rolling(20).mean()).astype(int)
-    df['Above_50SMA'] = (df['Close'] > df['Close'].rolling(50).mean()).astype(int)
-    df['Volume_Spike'] = (df['Volume'] > df['Volume'].rolling(20).mean() * 1.5).astype(int)
-    df['HourOfDay'] = df['Timestamp'].dt.hour
-    df['DayOfWeek'] = df['Timestamp'].dt.dayofweek
 
     st.write("Rows before dropna:", len(df))
 
-    # Step 4: Target Engineering (ATR-based thresholds)
     progress.progress(55, text="🎯 Generating labels...")
-    future_return = (df['Close'].shift(-4) - df['Close']) / df['Close']
-    atr_threshold = 0.2 * df['ATR'] / df['Close']
-    static_threshold = 0.0010
-    threshold = np.maximum(atr_threshold, static_threshold)
-    df['Target'] = np.where(future_return > threshold, 2,
-                            np.where(future_return < -threshold, 0, 1))
+    df['Target'] = ((df['Close'].shift(-3) - df['Close']) / df['Close']).apply(
+        lambda x: 2 if x > 0.002 else (0 if x < -0.002 else 1)
+    )
 
-    # Drop rows with NaNs in features or target
     df.dropna(subset=FEATURES + ['Target'], inplace=True)
     st.write("Rows after dropna (final training set):", len(df))
 
-    # Step 5: Prepare training set
     X = df[FEATURES]
     y = df['Target']
     st.write("📊 Target class distribution:", y.value_counts(normalize=True))
@@ -332,8 +265,6 @@ def train_model():
         st.warning(f"⚠️ Missing classes in training data: {missing_classes}")
         return None, None
 
-    # --- Split into train/validation ---
-    from sklearn.model_selection import train_test_split
     X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, shuffle=False)
 
     progress.progress(65, text="📦 Scaling features and computing class weights...")
@@ -342,7 +273,6 @@ def train_model():
     X_val_scaled = scaler.transform(X_val)
     class_weights = compute_class_weight('balanced', classes=np.array(expected_classes), y=y_train)
 
-    # Step 6: Train final model with your best params
     progress.progress(85, text="🔧 Training XGBoost model (best params)...")
     best_params = {
         "n_estimators": 186,
@@ -359,7 +289,6 @@ def train_model():
     model = XGBClassifier(**best_params)
     model.fit(X_train_scaled, y_train)
 
-    # --- Model Diagnostics ---
     st.subheader("🔍 Model Diagnostics")
     y_pred = model.predict(X_val_scaled)
     present_labels = sorted([l for l in [0, 1, 2] if l in np.unique(np.concatenate([y_val, y_pred]))])
@@ -387,12 +316,10 @@ def train_model():
         plt.title("Confusion Matrix")
         st.pyplot(fig)
 
-    # Feature importances
     importances = model.feature_importances_
     st.subheader("🔑 XGBoost Feature Importances")
     st.bar_chart(pd.Series(importances, index=FEATURES).sort_values(ascending=False))
 
-    # Step 7: Save model + scaler
     progress.progress(95, text="💾 Saving model + scaler to Drive...")
     model_bytes = pickle.dumps((model, scaler))
     upload_to_drive_stream(io.BytesIO(model_bytes), MODEL_FILE)
@@ -422,12 +349,7 @@ def load_model_from_drive():
     with open(MODEL_FILE, 'rb') as f:
         return pickle.load(f)
 
-# ========== Local Training Functions ==========
 def load_model_and_scaler():
-    """
-    Loads the model and scaler from local pickle file if available.
-    Retrains from scratch if loading fails.
-    """
     if os.path.exists(MODEL_FILE):
         try:
             with open(MODEL_FILE, 'rb') as f:
@@ -437,26 +359,6 @@ def load_model_and_scaler():
             st.warning(f"⚠️ Failed to load local model: {e}")
             st.info("🔁 Re-training model...")
     return train_model()
-
-def load_model_from_drive():
-    """
-    Loads the model+scaler from Google Drive (via pickle).
-    If unavailable, trains from scratch.
-    """
-    if not download_from_drive(MODEL_FILE):
-        st.error("❌ Failed to download model from Drive. Training new one.")
-        return train_model()
-
-    try:
-        with open(MODEL_FILE, 'rb') as f:
-            model, scaler = pickle.load(f)
-        return model, scaler
-    except Exception as e:
-        st.warning(f"⚠️ Error reading model file: {e}")
-        return train_model()
-
-# ========== Load or Retrain Model ==========
-RETRAIN_INTERVAL = timedelta(hours=12)
 
 def should_retrain():
     if not download_from_drive(LAST_TRAIN_FILE):
@@ -476,17 +378,6 @@ def should_retrain():
         st.error(f"⚠️ Error reading last_train.txt: {e}")
         return True
 
-# Only automatic retrain or load from drive — no sidebar button
-if should_retrain():
-    model, scaler = train_model()
-    save_last_train_time()
-else:
-    model, scaler = load_model_from_drive()
-
-features = FEATURES
-
-# ========== Model/Scaler session state initialization ==========
-
 def get_fresh_model():
     if should_retrain():
         model, scaler = train_model()
@@ -501,7 +392,7 @@ if "model" not in st.session_state or "scaler" not in st.session_state:
 model = st.session_state.model
 scaler = st.session_state.scaler
 
-# ========== Data Function ==========
+# ========== get_data() Strict Version ==========
 def get_data():
     df = pd.DataFrame(
         exchange.fetch_ohlcv('BTC/USDT', '15m', limit=5000),
@@ -511,90 +402,60 @@ def get_data():
     df['Timestamp'] = pd.to_datetime(df['Timestamp'], unit='ms').dt.tz_localize('UTC').dt.tz_convert(est)
     df.set_index('Timestamp', inplace=True)
 
-    # === Feature Engineering: MUST match train_model() exactly! ===
-    df['EMA12'] = ta.trend.ema_indicator(df['Close'], window=12)
-    df['EMA26'] = ta.trend.ema_indicator(df['Close'], window=26)
+    # STRICT feature engineering (must match train_model)
     df['EMA9'] = ta.trend.ema_indicator(df['Close'], window=9)
     df['EMA21'] = ta.trend.ema_indicator(df['Close'], window=21)
+    df['EMA12'] = ta.trend.ema_indicator(df['Close'], window=12)
+    df['EMA26'] = ta.trend.ema_indicator(df['Close'], window=26)
     df['VWAP'] = ta.volume.volume_weighted_average_price(df['High'], df['Low'], df['Close'], df['Volume'])
     df['RSI'] = ta.momentum.rsi(df['Close'])
     df['MACD'] = ta.trend.macd(df['Close'])
+    df['MACD_Signal'] = ta.trend.macd_signal(df['Close'])
     df['ATR'] = ta.volatility.average_true_range(df['High'], df['Low'], df['Close'])
+    df['ROC'] = ta.momentum.roc(df['Close'])
     df['OBV'] = ta.volume.on_balance_volume(df['Close'], df['Volume'])
-    df['ADX'] = ta.trend.adx(df['High'], df['Low'], df['Close'], window=14)
-
-    # Add cross/binary features
-    df['EMA9_Cross_21'] = (df['EMA9'] > df['EMA21']).astype(int)
     df['EMA12_Cross_26'] = (df['EMA12'] > df['EMA26']).astype(int)
+    df['EMA9_Cross_21'] = (df['EMA9'] > df['EMA21']).astype(int)
     df['Above_VWAP'] = (df['Close'] > df['VWAP']).astype(int)
 
-    # New engineered features
-    df['Return_1'] = df['Close'].pct_change(1)
-    df['Return_3'] = df['Close'].pct_change(3)
-    df['BB_Width'] = ta.volatility.bollinger_wband(df['Close'])
-    df['Above_20SMA'] = (df['Close'] > df['Close'].rolling(20).mean()).astype(int)
-    df['Above_50SMA'] = (df['Close'] > df['Close'].rolling(50).mean()).astype(int)
-    df['Volume_Spike'] = (df['Volume'] > df['Volume'].rolling(20).mean() * 1.5).astype(int)
-    df['HourOfDay'] = df.index.hour
-    df['DayOfWeek'] = df.index.dayofweek
-
-    # Use only these features for modeling
-    features = FEATURES
-    df.dropna(subset=features, inplace=True)  # drop if any of these features are NaN
-    X = df[features]
+    df.dropna(subset=FEATURES, inplace=True)
+    X = df[FEATURES]
 
     try:
         transformed = scaler.transform(X)
         probs = model.predict_proba(transformed)
         padded_probs = [[None, None, None] for _ in range(len(X))]
-
         for i, row in enumerate(probs):
             for j, val in enumerate(row):
                 if j < 3:
                     padded_probs[i][j] = val
-
         df = df.loc[X.index]
         df[['S0', 'S1', 'S2']] = padded_probs
         df['Prediction'] = model.predict(transformed)
-
-        current_position = st.session_state.get('open_trade', None)
-        df['ITB'] = df.apply(lambda row: should_enter_trade(row, current_position), axis=1)
-
     except Exception as e:
-        st.error(f"Error applying model or ITB logic: {e}")
-        df['S0'], df['S1'], df['S2'], df['Prediction'], df['ITB'] = None, None, None, None, None
+        st.error(f"Error applying model: {e}")
+        df['S0'], df['S1'], df['S2'], df['Prediction'] = None, None, None, None
 
     return df
 
 # ========== Live Mode ==========
 if mode == "Live":
     st.header("🟢 Live Mode")
-
-    # 🔁 Auto-refresh every 15 minutes
-    from streamlit_autorefresh import st_autorefresh
     st_autorefresh(interval=900000, limit=None, key="live_refresh")
-
-    # ✅ Always use the model/scaler from session state
     model = st.session_state.model
     scaler = st.session_state.scaler
-
-    # ✅ Load latest live data
     df = get_data()
     features = FEATURES
     X = scaler.transform(df[features])
     raw_probs = model.predict_proba(X)
-
-    # Ensure 3 class probabilities
     full_probs = np.zeros((raw_probs.shape[0], 3))
     for idx, cls in enumerate(model.classes_):
         full_probs[:, cls] = raw_probs[:, idx]
-
     df['Prediction'] = model.predict(X)
     df['S0'] = full_probs[:, 0]
     df['S1'] = full_probs[:, 1]
     df['S2'] = full_probs[:, 2]
 
-    # ========== Build Signal Log for All Candles ==========
     signal_log = []
     for idx, row in df.iterrows():
         signal = None
@@ -621,14 +482,11 @@ if mode == "Live":
     signal_df["Timestamp"] = pd.to_datetime(signal_df["Timestamp"], errors="coerce")
     signal_df = signal_df.sort_values(by="Timestamp", ascending=False)
 
-    # ========== Plot Price + Indicators ==========
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df.index, y=df['Close'], name='Price', line=dict(color='lightblue')))
 
-    # ✅ Plot current signals (from this model run)
     long_signals = df[(df['Prediction'] == 2) & (df['S2'] > long_thresh)]
     short_signals = df[(df['Prediction'] == 0) & (df['S0'] > short_thresh)]
-
     fig.add_trace(go.Scatter(
         x=long_signals.index,
         y=long_signals['Close'],
@@ -643,7 +501,6 @@ if mode == "Live":
         marker=dict(color='red', size=8),
         name='Short Signal'
     ))
-
     fig.update_layout(
         title=f"📉 BTC Live — ${df['Close'].iloc[-1]:.2f}",
         height=600,
@@ -655,20 +512,13 @@ if mode == "Live":
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # 📋 Signal Log Table (current predictions only)
     st.subheader("📊 Signal Log (Current Model Predictions)")
     st.dataframe(signal_df, use_container_width=True)
 
-    # Optionally filter for only actionable signals:
-    # actionable = signal_df[signal_df["Signal"].isin(["Long", "Short"])]
-    # st.dataframe(actionable, use_container_width=True)
-
-    import pytz
     est = pytz.timezone('US/Eastern')
     now_est = datetime.now(est)
     st.write("⏰ Last refreshed:", now_est.strftime("%H:%M:%S"))
 
-    # 🔁 Force Retrain button remains as is
     st.markdown("---")
     if st.button("🔁 Force Retrain", type="primary"):
         with st.spinner("Retraining model..."):
@@ -681,109 +531,78 @@ if mode == "Live":
 # ========== Backtest Mode ==========
 elif mode == "Backtest":
     df = get_data()
+    trades = []
+    in_position = None
+    entry_time = entry_price = entry_row = None
 
-    results = {"Pure": [], "ITB": []}
+    for i in range(1, len(df)):
+        row = df.iloc[i]
+        if in_position is None:
+            valid_long = row['Prediction'] == 2 and row['S2'] > long_thresh
+            valid_short = row['Prediction'] == 0 and row['S0'] > short_thresh
+            if valid_long:
+                in_position = "LONG"
+                entry_time, entry_price, entry_row = row.name, row['Close'], row
+            elif valid_short:
+                in_position = "SHORT"
+                entry_time, entry_price, entry_row = row.name, row['Close'], row
+        elif in_position == "LONG":
+            valid_exit = row['Prediction'] == 0 and row['S0'] > short_thresh
+            if valid_exit:
+                trades.append({
+                    "Entry Time": entry_time,
+                    "Exit Time": row.name,
+                    "Direction": in_position,
+                    "Entry Price": entry_price,
+                    "Exit Price": row['Close'],
+                    "PNL (USD)": row['Close'] - entry_price,
+                    "Profit %": (row['Close'] / entry_price - 1) * 100,
+                    "Confidence": round(max(entry_row.get("S0", 0), entry_row.get("S2", 0)), 3)
+                })
+                in_position = None
+        elif in_position == "SHORT":
+            valid_exit = row['Prediction'] == 2 and row['S2'] > long_thresh
+            if valid_exit:
+                trades.append({
+                    "Entry Time": entry_time,
+                    "Exit Time": row.name,
+                    "Direction": in_position,
+                    "Entry Price": entry_price,
+                    "Exit Price": row['Close'],
+                    "PNL (USD)": entry_price - row['Close'],
+                    "Profit %": (entry_price / row['Close'] - 1) * 100,
+                    "Confidence": round(max(entry_row.get("S0", 0), entry_row.get("S2", 0)), 3)
+                })
+                in_position = None
 
-    for use_itb in ["Pure", "ITB"]:
-        trades = []
-        in_position = None
-        entry_time = entry_price = entry_row = None
-
-        for i in range(1, len(df)):
-            row = df.iloc[i]
-            passes_itb = row.get('ITB', True) if use_itb == "ITB" else True
-
-            # === ENTRY LOGIC ===
-            if in_position is None:
-                valid_long = row['Prediction'] == 2 and row['S2'] > long_thresh
-                valid_short = row['Prediction'] == 0 and row['S0'] > short_thresh
-                if valid_long and passes_itb:
-                    in_position = "LONG"
-                    entry_time, entry_price, entry_row = row.name, row['Close'], row
-                elif valid_short and passes_itb:
-                    in_position = "SHORT"
-                    entry_time, entry_price, entry_row = row.name, row['Close'], row
-
-            # === EXIT LOGIC ===
-            elif in_position == "LONG":
-                valid_exit = row['Prediction'] == 0 and row['S0'] > short_thresh
-                if valid_exit:
-                    trades.append({
-                        "Entry Time": entry_time,
-                        "Exit Time": row.name,
-                        "Direction": in_position,
-                        "Entry Price": entry_price,
-                        "Exit Price": row['Close'],
-                        "PNL (USD)": row['Close'] - entry_price,
-                        "Profit %": (row['Close'] / entry_price - 1) * 100,
-                        "ITB": use_itb,
-                        "Confidence": round(max(entry_row.get("S0", 0), entry_row.get("S2", 0)), 3)
-                    })
-                    in_position = None
-
-            elif in_position == "SHORT":
-                valid_exit = row['Prediction'] == 2 and row['S2'] > long_thresh
-                if valid_exit:
-                    trades.append({
-                        "Entry Time": entry_time,
-                        "Exit Time": row.name,
-                        "Direction": in_position,
-                        "Entry Price": entry_price,
-                        "Exit Price": row['Close'],
-                        "PNL (USD)": entry_price - row['Close'],
-                        "Profit %": (entry_price / row['Close'] - 1) * 100,
-                        "ITB": use_itb,
-                        "Confidence": round(max(entry_row.get("S0", 0), entry_row.get("S2", 0)), 3)
-                    })
-                    in_position = None
-
-        results[use_itb] = trades
-
-    # ✅ Convert to DataFrames
-    df_pure = pd.DataFrame(results["Pure"])
-    df_itb = pd.DataFrame(results["ITB"])
-
-    # ✅ Display Results
-    st.subheader("🧪 Backtest A: Pure Model")
-    if not df_pure.empty:
-        st.dataframe(df_pure.style.applymap(lambda v: 'color:green' if v > 0 else 'color:red', subset=["PNL (USD)", "Profit %"]))
-        st.markdown(f"**Total Trades**: {len(df_pure)} | **Avg Profit**: {df_pure['Profit %'].mean():.2f}%")
+    df_trades = pd.DataFrame(trades)
+    st.subheader("🧪 Backtest — Strict Model")
+    if not df_trades.empty:
+        st.dataframe(df_trades.style.applymap(lambda v: 'color:green' if v > 0 else 'color:red', subset=["PNL (USD)", "Profit %"]))
+        st.markdown(f"**Total Trades**: {len(df_trades)} | **Avg Profit**: {df_trades['Profit %'].mean():.2f}%")
     else:
-        st.warning("No trades in pure mode.")
+        st.warning("No trades in this backtest.")
 
-    st.subheader("🧪 Backtest B: Model + ITB Filter")
-    if not df_itb.empty:
-        st.dataframe(df_itb.style.applymap(lambda v: 'color:green' if v > 0 else 'color:red', subset=["PNL (USD)", "Profit %"]))
-        st.markdown(f"**Total Trades**: {len(df_itb)} | **Avg Profit**: {df_itb['Profit %'].mean():.2f}%")
-    else:
-        st.warning("No trades in ITB mode.")
-
-    # ✅ Plot Combined Trades + Model Signals
-    st.subheader("📈 Backtest Chart with All Trades")
+    st.subheader("📈 Backtest Chart with Trades")
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df.index, y=df['Close'], name='Price', line=dict(color='lightblue')))
-
     color_map = {"LONG": "green", "SHORT": "red"}
-    for trade_df, label, marker_symbol in [(df_pure, "Pure", 'circle'), (df_itb, "ITB", 'diamond')]:
-        for _, trade in trade_df.iterrows():
-            color = color_map.get(trade["Direction"], "gray")
-            fig.add_trace(go.Scatter(
-                x=[trade["Entry Time"]], y=[trade["Entry Price"]],
-                mode='markers',
-                marker=dict(color=color, symbol=marker_symbol, size=10),
-                name=f"{label} {trade['Direction']} Entry"
-            ))
-            fig.add_trace(go.Scatter(
-                x=[trade["Exit Time"]], y=[trade["Exit Price"]],
-                mode='markers',
-                marker=dict(color=color, symbol='x', size=10),
-                name=f"{label} {trade['Direction']} Exit"
-            ))
-
-    # ✅ Add Model Signal Markers
+    for _, trade in df_trades.iterrows():
+        color = color_map.get(trade["Direction"], "gray")
+        fig.add_trace(go.Scatter(
+            x=[trade["Entry Time"]], y=[trade["Entry Price"]],
+            mode='markers',
+            marker=dict(color=color, symbol='circle', size=10),
+            name=f"{trade['Direction']} Entry"
+        ))
+        fig.add_trace(go.Scatter(
+            x=[trade["Exit Time"]], y=[trade["Exit Price"]],
+            mode='markers',
+            marker=dict(color=color, symbol='x', size=10),
+            name=f"{trade['Direction']} Exit"
+        ))
     signal_longs = df[(df['Prediction'] == 2) & (df['S2'] > long_thresh)]
     signal_shorts = df[(df['Prediction'] == 0) & (df['S0'] > short_thresh)]
-
     fig.add_trace(go.Scatter(
         x=signal_longs.index,
         y=signal_longs['Close'],
@@ -798,7 +617,6 @@ elif mode == "Backtest":
         marker=dict(color='orangered', size=6),
         name='📉 Model Short Signal'
     ))
-
     fig.update_layout(
         height=600,
         title="Backtest Trade Entries and Exits",
@@ -809,5 +627,4 @@ elif mode == "Backtest":
         paper_bgcolor='rgba(0,0,0,0)',
         font=dict(color='white')
     )
-
     st.plotly_chart(fig, use_container_width=True)
