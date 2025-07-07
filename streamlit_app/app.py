@@ -38,15 +38,12 @@ creds = service_account.Credentials.from_service_account_info(SERVICE_ACCOUNT_IN
 drive_service = build('drive', 'v3', credentials=creds)
 
 st.set_page_config(layout='wide')
-st.title("🤖 BTC AI Dashboard (RandomForest, Original Parameters)")
+st.title("🤖 BTC AI Dashboard (RandomForest, 0.5 Thresholds)")
 
-st.sidebar.header("Signal Probability Thresholds")
-long_thresh = st.sidebar.slider(
-    'Long signal probability threshold', min_value=0.3, max_value=0.95, value=0.60, step=0.01
-)
-short_thresh = st.sidebar.slider(
-    'Short signal probability threshold', min_value=0.3, max_value=0.95, value=0.60, step=0.01
-)
+# ======= THRESHOLDS =======
+long_thresh = 0.5
+short_thresh = 0.5
+
 mode = st.radio("Mode", ["Live", "Backtest"], horizontal=True)
 est = pytz.timezone('US/Eastern')
 exchange = ccxt.coinbase()
