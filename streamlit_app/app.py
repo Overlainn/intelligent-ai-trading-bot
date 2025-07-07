@@ -38,7 +38,7 @@ creds = service_account.Credentials.from_service_account_info(SERVICE_ACCOUNT_IN
 drive_service = build('drive', 'v3', credentials=creds)
 
 st.set_page_config(layout='wide')
-st.title("🤖 BTC AI Dashboard (RandomForest, threshold=0.00013)")
+st.title("🤖 BTC AI Dashboard")
 
 # ======= THRESHOLDS =======
 long_thresh = 0.5
@@ -209,7 +209,7 @@ def train_model():
     progress.progress(55, text="🎯 Generating labels...")
     # --------- HERE IS THE CHANGED THRESHOLD ---------
     df['Target'] = ((df['Close'].shift(-3) - df['Close']) / df['Close']).apply(
-        lambda x: 2 if x > 0.00013 else (0 if x < -0.00013 else 1)
+        lambda x: 2 if x > 0.00016 else (0 if x < -0.00016 else 1)
     )
     df.dropna(subset=FEATURES + ['Target'], inplace=True)
     st.write("Rows after dropna (final training set):", len(df))
