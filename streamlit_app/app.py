@@ -6,13 +6,13 @@ from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
 import ta
-from xgboost import XGBClassifier
-import seaborn as sns
-import matplotlib.pyplot as plt
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.utils.class_weight import compute_class_weight
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, confusion_matrix
+import seaborn as sns
+import matplotlib.pyplot as plt
 import plotly.graph_objs as go
 import streamlit as st
 import pytz
@@ -21,14 +21,12 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload, MediaFileUpload
 import ccxt
 
-# ========== STRICT FEATURE SET ==========
 FEATURES = [
     'EMA9', 'EMA21', 'VWAP', 'RSI', 'MACD', 'MACD_Signal',
     'ATR', 'ROC', 'OBV', 'EMA12_Cross_26', 'EMA9_Cross_21', 'Above_VWAP'
 ]
 
 MODEL_FILE = "model.pkl"
-SCALER_FILE = "scaler.pkl"
 DATA_FILE = "btc_data.csv"
 LAST_TRAIN_FILE = "last_train.txt"
 RETRAIN_INTERVAL = timedelta(hours=12)
@@ -39,9 +37,8 @@ SERVICE_ACCOUNT_INFO = st.secrets["google_service_account"]
 creds = service_account.Credentials.from_service_account_info(SERVICE_ACCOUNT_INFO, scopes=SCOPES)
 drive_service = build('drive', 'v3', credentials=creds)
 
-# ========== UI ==========
 st.set_page_config(layout='wide')
-st.title("🤖 BTC AI Dashboard (Strict 30m/5000 Features)")
+st.title("🤖 BTC AI Dashboard (RandomForest, Original Parameters)")
 
 st.sidebar.header("Signal Probability Thresholds")
 long_thresh = st.sidebar.slider(
@@ -57,7 +54,6 @@ logfile = "btc_alert_log.csv"
 if not os.path.exists(logfile):
     pd.DataFrame(columns=["Timestamp", "Price", "Signal", "Scores"]).to_csv(logfile, index=False)
 
-# ========== Google Drive Functions ==========
 def get_folder_id():
     query = f"name='{FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder'"
     response = drive_service.files().list(q=query, spaces='drive', fields='files(id)').execute()
@@ -118,20 +114,11 @@ def download_from_drive(filename):
         f.write(fh.getvalue())
     return True
 
-# ========== Data Fetching ==========
-def fetch_paginated_ohlcv(symbol='BTC/USDT', timeframe='30m', days=90):
+def fetch_paginated_ohlcv(symbol='BTC/USDT', timeframe='30m', limit=1000):
     exchange = ccxt.coinbase()
-    since = exchange.milliseconds() - days * 24 * 60 * 60 * 1000
     all_data = []
-    while True:
-        data = exchange.fetch_ohlcv(symbol, timeframe, since=since, limit=5000)
-        if not data:
-            break
-        all_data.extend(data)
-        since = data[-1][0] + 60_000
-        if len(data) < 5000:
-            break
-        time.sleep(exchange.rateLimit / 1000)
+    data = exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
+    all_data.extend(data)
     df = pd.DataFrame(all_data, columns=['Timestamp', 'Open', 'High', 'Low', 'Close', 'Volume'])
     df['Timestamp'] = pd.to_datetime(df['Timestamp'], unit='ms')
     df.set_index('Timestamp', inplace=True)
@@ -180,7 +167,6 @@ def load_or_fetch_data():
         df["Timestamp"] = pd.to_datetime(df["Timestamp"], errors="coerce")
     return df
 
-# ========== Push Notifications ==========
 push_user_key = st.secrets["pushover"]["user"]
 push_app_token = st.secrets["pushover"]["token"]
 def send_push_notification(msg):
@@ -190,29 +176,23 @@ def send_push_notification(msg):
         "message": msg
     })
 
-# ========== Refresh Timer ==========
 if 'last_refresh' not in st.session_state:
     st.session_state.last_refresh = time.time()
 if time.time() - st.session_state.last_refresh > 60:
     st.session_state.last_refresh = time.time()
     st.rerun()
 
-# ========== Strict train_model() ==========
 def train_model():
     st.subheader("📚 Training Model")
     progress = st.progress(0, text="Starting...")
-
-    EXTRA = 60
-    RAW_ROWS = 5000 + EXTRA
+    RAW_ROWS = 1000
     raw_df = load_or_fetch_data()
     st.write("Raw rows loaded from source:", len(raw_df))
     df = raw_df.tail(RAW_ROWS)
     st.write("Rows after tail(RAW_ROWS):", len(df))
-
     df.to_csv(DATA_FILE, index=False)
     upload_to_drive(DATA_FILE)
     progress.progress(10, text="🔒 Backed up raw data to Drive...")
-
     progress.progress(20, text="🧠 Calculating technical indicators...")
     df['EMA9'] = ta.trend.ema_indicator(df['Close'], window=9)
     df['EMA21'] = ta.trend.ema_indicator(df['Close'], window=21)
@@ -229,59 +209,37 @@ def train_model():
     df['EMA9_Cross_21'] = (df['EMA9'] > df['EMA21']).astype(int)
     df['Above_VWAP'] = (df['Close'] > df['VWAP']).astype(int)
     st.write("Rows before dropna:", len(df))
-
     progress.progress(55, text="🎯 Generating labels...")
     df['Target'] = ((df['Close'].shift(-3) - df['Close']) / df['Close']).apply(
         lambda x: 2 if x > 0.002 else (0 if x < -0.002 else 1)
     )
-
     df.dropna(subset=FEATURES + ['Target'], inplace=True)
     st.write("Rows after dropna (final training set):", len(df))
-
     X = df[FEATURES]
     y = df['Target']
     st.write("📊 Target class distribution:", y.value_counts(normalize=True))
-
     expected_classes = [0, 1, 2]
     actual_classes = sorted(y.unique())
     missing_classes = set(expected_classes) - set(actual_classes)
     if missing_classes:
         st.warning(f"⚠️ Missing classes in training data: {missing_classes}")
         return None, None
-
     X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, shuffle=False)
-
     progress.progress(65, text="📦 Scaling features and computing class weights...")
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_val_scaled = scaler.transform(X_val)
     class_weights = compute_class_weight('balanced', classes=np.array(expected_classes), y=y_train)
-
-    progress.progress(85, text="🔧 Training XGBoost model (best params)...")
-    best_params = {
-        "n_estimators": 186,
-        "max_depth": 8,
-        "learning_rate": 0.0005349070362427248,
-        "subsample": 0.5869836653397046,
-        "colsample_bytree": 0.65743097026186,
-        "reg_lambda": 0.04368036990918477,
-        "reg_alpha": 0.0014410899603732284,
-        "use_label_encoder": False,
-        "eval_metric": "mlogloss",
-        "random_state": 42,
-    }
-    model = XGBClassifier(**best_params)
+    progress.progress(85, text="🔧 Training RandomForestClassifier (strict original params)...")
+    model = RandomForestClassifier(n_estimators=50, random_state=42)
     model.fit(X_train_scaled, y_train)
-
     st.subheader("🔍 Model Diagnostics")
     y_pred = model.predict(X_val_scaled)
     present_labels = sorted([l for l in [0, 1, 2] if l in np.unique(np.concatenate([y_val, y_pred]))])
     all_names = ["Short", "Neutral", "Long"]
     present_names = [all_names[i] for i in present_labels]
-
     if set([0, 1, 2]) - set(np.unique(y_val)):
         st.warning(f"⚠️ Validation set is missing these classes: {set([0,1,2])-set(np.unique(y_val))}")
-
     if len(present_labels) < 2:
         st.warning("⚠️ Not enough classes in validation set for diagnostics (need at least 2). "
                    "Try increasing data window or adjusting thresholds.")
@@ -290,7 +248,6 @@ def train_model():
             y_val, y_pred, labels=present_labels, target_names=present_names, zero_division=0
         )
         st.code(report, language='text')
-
         cm = confusion_matrix(y_val, y_pred, labels=present_labels)
         fig, ax = plt.subplots()
         sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
@@ -299,24 +256,20 @@ def train_model():
         plt.ylabel("Actual")
         plt.title("Confusion Matrix")
         st.pyplot(fig)
-
-    importances = model.feature_importances_
-    st.subheader("🔑 XGBoost Feature Importances")
-    st.bar_chart(pd.Series(importances, index=FEATURES).sort_values(ascending=False))
-
+    try:
+        importances = model.feature_importances_
+        st.subheader("🔑 RandomForest Feature Importances")
+        st.bar_chart(pd.Series(importances, index=FEATURES).sort_values(ascending=False))
+    except Exception:
+        pass
     progress.progress(95, text="💾 Saving model + scaler to Drive...")
     model_bytes = pickle.dumps((model, scaler))
     upload_to_drive_stream(io.BytesIO(model_bytes), MODEL_FILE)
-
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     upload_to_drive_content(LAST_TRAIN_FILE, timestamp)
-
     progress.progress(100, text="✅ Training complete!")
     st.success("🎉 Model trained and uploaded!")
-
     return model, scaler
-
-# ========== Utility Functions ==========
 
 def save_last_train_time():
     try:
@@ -332,17 +285,6 @@ def load_model_from_drive():
         return train_model()
     with open(MODEL_FILE, 'rb') as f:
         return pickle.load(f)
-
-def load_model_and_scaler():
-    if os.path.exists(MODEL_FILE):
-        try:
-            with open(MODEL_FILE, 'rb') as f:
-                model, scaler = pickle.load(f)
-            return model, scaler
-        except Exception as e:
-            st.warning(f"⚠️ Failed to load local model: {e}")
-            st.info("🔁 Re-training model...")
-    return train_model()
 
 def should_retrain():
     if not download_from_drive(LAST_TRAIN_FILE):
@@ -376,17 +318,14 @@ if "model" not in st.session_state or "scaler" not in st.session_state:
 model = st.session_state.model
 scaler = st.session_state.scaler
 
-# ========== get_data() Strict Version ==========
 def get_data():
     df = pd.DataFrame(
-        exchange.fetch_ohlcv('BTC/USDT', '30m', limit=5000),
+        exchange.fetch_ohlcv('BTC/USDT', '30m', limit=1000),
         columns=['Timestamp', 'Open', 'High', 'Low', 'Close', 'Volume']
     )
     est = pytz.timezone('US/Eastern')
     df['Timestamp'] = pd.to_datetime(df['Timestamp'], unit='ms').dt.tz_localize('UTC').dt.tz_convert(est)
     df.set_index('Timestamp', inplace=True)
-
-    # STRICT feature engineering (must match train_model)
     df['EMA9'] = ta.trend.ema_indicator(df['Close'], window=9)
     df['EMA21'] = ta.trend.ema_indicator(df['Close'], window=21)
     df['EMA12'] = ta.trend.ema_indicator(df['Close'], window=12)
@@ -401,10 +340,8 @@ def get_data():
     df['EMA12_Cross_26'] = (df['EMA12'] > df['EMA26']).astype(int)
     df['EMA9_Cross_21'] = (df['EMA9'] > df['EMA21']).astype(int)
     df['Above_VWAP'] = (df['Close'] > df['VWAP']).astype(int)
-
     df.dropna(subset=FEATURES, inplace=True)
     X = df[FEATURES]
-
     try:
         transformed = scaler.transform(X)
         probs = model.predict_proba(transformed)
@@ -419,10 +356,8 @@ def get_data():
     except Exception as e:
         st.error(f"Error applying model: {e}")
         df['S0'], df['S1'], df['S2'], df['Prediction'] = None, None, None, None
-
     return df
 
-# ========== Live Mode ==========
 if mode == "Live":
     st.header("🟢 Live Mode")
     from streamlit_autorefresh import st_autorefresh
@@ -440,7 +375,6 @@ if mode == "Live":
     df['S0'] = full_probs[:, 0]
     df['S1'] = full_probs[:, 1]
     df['S2'] = full_probs[:, 2]
-
     signal_log = []
     for idx, row in df.iterrows():
         signal = None
@@ -462,14 +396,11 @@ if mode == "Live":
             "Long": round(row['S2'], 4) if row['S2'] is not None else None,
             "Confidence": round(confidence, 4)
         })
-
     signal_df = pd.DataFrame(signal_log)
     signal_df["Timestamp"] = pd.to_datetime(signal_df["Timestamp"], errors="coerce")
     signal_df = signal_df.sort_values(by="Timestamp", ascending=False)
-
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df.index, y=df['Close'], name='Price', line=dict(color='lightblue')))
-
     long_signals = df[(df['Prediction'] == 2) & (df['S2'] > long_thresh)]
     short_signals = df[(df['Prediction'] == 0) & (df['S0'] > short_thresh)]
     fig.add_trace(go.Scatter(
@@ -496,13 +427,10 @@ if mode == "Live":
         font=dict(color='white')
     )
     st.plotly_chart(fig, use_container_width=True)
-
     st.subheader("📊 Signal Log (Current Model Predictions)")
     st.dataframe(signal_df, use_container_width=True)
-
     now_est = datetime.now(est)
     st.write("⏰ Last refreshed:", now_est.strftime("%H:%M:%S"))
-
     st.markdown("---")
     if st.button("🔁 Force Retrain", type="primary"):
         with st.spinner("Retraining model..."):
@@ -512,13 +440,11 @@ if mode == "Live":
             st.success("✅ Model retrained successfully.")
             st.rerun()
 
-# ========== Backtest Mode ==========
 elif mode == "Backtest":
     df = get_data()
     trades = []
     in_position = None
     entry_time = entry_price = entry_row = None
-
     for i in range(1, len(df)):
         row = df.iloc[i]
         if in_position is None:
@@ -558,7 +484,6 @@ elif mode == "Backtest":
                     "Confidence": round(max(entry_row.get("S0", 0), entry_row.get("S2", 0)), 3)
                 })
                 in_position = None
-
     df_trades = pd.DataFrame(trades)
     st.subheader("🧪 Backtest — Strict Model")
     if not df_trades.empty:
@@ -566,7 +491,6 @@ elif mode == "Backtest":
         st.markdown(f"**Total Trades**: {len(df_trades)} | **Avg Profit**: {df_trades['Profit %'].mean():.2f}%")
     else:
         st.warning("No trades in this backtest.")
-
     st.subheader("📈 Backtest Chart with Trades")
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df.index, y=df['Close'], name='Price', line=dict(color='lightblue')))
